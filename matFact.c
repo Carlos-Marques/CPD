@@ -1,4 +1,4 @@
-/**************************Declarations***********************************/
+/**************************Declarations**************************/
 
 #include <stdlib.h>
 #include <string.h>
@@ -8,8 +8,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-double **L, **R;
-
 #define RAND01 ((double)random() / (double)RAND_MAX)
 
 typedef struct entryA{
@@ -18,12 +16,14 @@ typedef struct entryA{
     double rate;
 }entryA;
 
+double **L, **R, **B;
+entryA* A;
+
 void random_fill_LR(int nU, int nI, int nF);
 void alloc_LR(int nU, int nI, int nF);
 void free_LR(int nU, int nF);
 
-/***********************************************************************/
-
+/****************************************************************/
 
 int main(int argc, char *argv[]){
     FILE *fp;
@@ -41,13 +41,15 @@ int main(int argc, char *argv[]){
 		exit(1);
     }
 
+/******************************Setup******************************/
+
     //Functional Parallelism
     fscanf(fp, "%d", &nIter);
     fscanf(fp, "%lf", &alpha);
     fscanf(fp, "%d", &nFeat);
     fscanf(fp, "%d %d %d", &nUser, &nItem, &noEntry);
 
-    entryA* A = (entryA *)malloc(sizeof(entryA)*noEntry);
+    A = (entryA *)malloc(sizeof(entryA)*noEntry);
 
     //Data Parallelism
     for(int i = 0; i < noEntry; i++){
@@ -57,7 +59,16 @@ int main(int argc, char *argv[]){
     alloc_LR(nUser, nItem, nFeat);
     random_fill_LR(nUser, nItem, nFeat);
 
+/****************************************************************/
     
+    for(int i = 0; i < nIter; i++){
+
+
+
+
+    }
+
+/****************************************************************/
 
     fclose(fp);
     free(A);
@@ -66,11 +77,20 @@ int main(int argc, char *argv[]){
     return 0;
 }
 
+void setup_VAR(int nU, int nI, int nF){
+
+
+}
+
 void alloc_LR(int nU, int nI, int nF){
 
+    B = (double**)malloc(sizeof(double)*nU);
     L = (double**)malloc(sizeof(double)*nU);
     R = (double**)malloc(sizeof(double)*nF);
 
+    //Data Parallelism
+	for (int i = 0; i < nU; i++)
+		B[i] = (double *)malloc(sizeof(double)  * nI);
     //Data Parallelism
 	for (int i = 0; i < nU; i++)
 		L[i] = (double *)malloc(sizeof(double)  * nF);
@@ -96,6 +116,10 @@ void random_fill_LR(int nU, int nI, int nF)
 }
 
 void free_LR(int nU, int nF){
+
+    //Data Parallelism
+	for(int i=0; i<nU; i++) free(B[i]);
+	free(L);
 
     //Data Parallelism
 	for(int i=0; i<nU; i++) free(L[i]);
