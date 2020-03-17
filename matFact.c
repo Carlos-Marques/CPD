@@ -42,7 +42,6 @@ int main(int argc, char *argv[]){
     }
 
 /******************************Setup******************************/
-
     //Functional Parallelism
     fscanf(fp, "%d", &nIter);
     fscanf(fp, "%lf", &alpha);
@@ -77,10 +76,6 @@ int main(int argc, char *argv[]){
     return 0;
 }
 
-void setup_VAR(int nU, int nI, int nF){
-
-
-}
 
 void alloc_LR(int nU, int nI, int nF){
 
