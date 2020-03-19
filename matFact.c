@@ -104,7 +104,7 @@ int main(int argc, char *argv[]){
 /****************************************************************/
 
     free(A);
-    free_LR(nUser, nFeat, &L, &R, &newR, &newL, &B);
+    free_LR(nUser, nFeat, &L, &R, &newL, &newR, &B);
 
     return 0;
 }
@@ -120,10 +120,8 @@ void alloc_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, 
     *newR = (double**)malloc(sizeof(double*)*nF);
 
     //Data Parallelism
-	for (int i = 0; i < nU; i++)
-		(*B)[i] = (double*)malloc(sizeof(double)*nI);
-    //Data Parallelism
 	for (int i = 0; i < nU; i++){
+        (*B)[i] = (double*)malloc(sizeof(double)*nI);
         (*L)[i] = (double *)malloc(sizeof(double) *nF);
         (*newL)[i] = (double *)malloc(sizeof(double)*nF);
     }
@@ -155,29 +153,6 @@ void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***
         }
 }           
 
-void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B){
-
-    //Data Parallelism
-	for(int i=0; i<nU; i++) free((*B)[i]);
-	free(*B);
-
-    //Data Parallelism
-	for(int i=0; i<nU; i++) free((*L)[i]);
-	free(*L);
-
-    //Data Parallelism
-	for(int i=0; i<nU; i++) free((*newL)[i]);
-	free(*newL);
-
-    //Data Parallelism
-    for(int i=0; i<nF; i++) free((*newR)[i]);
-	free(*newR);
-
-    //Data Parallelism
-    for(int i=0; i<nF; i++) free((*R)[i]);
-	free(*R);
-}
-
 void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR){
 
     double **aux;
@@ -201,4 +176,25 @@ void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B){
         for(int j = 0; j < nI; j++)
             for(int k = 0; k < nF; k++)
                 (*B)[i][j] += (*L)[i][k]*(*R)[k][j];
+}
+
+void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B){
+
+    //Data Parallelism
+	for(int i=0; i<nU; i++){
+        free((*B)[i]);
+        free((*L)[i]);
+        free((*newL)[i]);
+    } 
+	free(*B);
+	free(*L);
+	free(*newL);
+
+    //Data Parallelism
+    for(int i=0; i<nF; i++){
+        free((*R)[i]);
+        free((*newR)[i]);
+    } 
+	free(*newR);
+	free(*R);
 }
