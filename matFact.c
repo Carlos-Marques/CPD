@@ -16,18 +16,22 @@ typedef struct entryA{
     double rate;
 }entryA;
 
-double **L, **R, **B;
+double **L, **R, **B, **newL, **newR;
+;
 entryA* A;
 
 void random_fill_LR(int nU, int nI, int nF);
 void alloc_LR(int nU, int nI, int nF);
 void free_LR(int nU, int nF);
+void update_LR(int nU, int nI, int nF);
+void multiply_LR(int nU, int nI, int nF);
 
 /****************************************************************/
 
 int main(int argc, char *argv[]){
     FILE *fp;
-    int nIter, nFeat, nUser, nItem, nZero, noEntry;
+    int nIter, nFeat, nUser, nItem, nZero, nEntry;
+    int deriv = 0;
     double alpha;
 
     if(argc != 2){
@@ -46,30 +50,61 @@ int main(int argc, char *argv[]){
     fscanf(fp, "%d", &nIter);
     fscanf(fp, "%lf", &alpha);
     fscanf(fp, "%d", &nFeat);
-    fscanf(fp, "%d %d %d", &nUser, &nItem, &noEntry);
+    fscanf(fp, "%d %d %d", &nUser, &nItem, &nEntry);
 
-    A = (entryA *)malloc(sizeof(entryA)*noEntry);
+    A = (entryA*)malloc(sizeof(entryA)*nEntry);
 
     //Data Parallelism
-    for(int i = 0; i < noEntry; i++){
-        fscanf(fp, "%d %d %lf", &(A[i].column), &(A[i].row), &(A[i].rate));
+    for(int i = 0; i < nEntry; i++){
+        fscanf(fp, "%d %d %lf", &(A[i].row), &(A[i].column), &(A[i].rate));
     }
 
     alloc_LR(nUser, nItem, nFeat);
     random_fill_LR(nUser, nItem, nFeat);
+    fclose(fp);
 
 /****************************************************************/
+
+    for(int n = 0; n < nIter; n++){
+
+        for(int i = 0; i < nUser; i++){
+            for(int k = 0; k < nFeat; k++){
+
+                for(int m = 0; m < nEntry; m++){
+                    if(A[m].row == i){
+                        deriv += 2*(A[m].rate - B[i][ A[m].column ])*(-R[k][ A[m].column ]);
+                    }
+                }
+                newL[i][k] = L[i][k]-alpha*deriv;
+                deriv = 0;
+            }
+        }
     
-    for(int i = 0; i < nIter; i++){
+        for(int k = 0; k < nFeat; k++){
+            for(int j = 0; j < nItem; j++){
 
+                for(int m = 0; m < nEntry; m++){
+                    if(A[m].column == j){
+                        deriv += 2*(A[m].rate - B[A[m].row][j])*(-L[A[m].row][k]);
+                    }
+                }
+                newR[k][j] = R[k][j]-alpha*deriv;
+                deriv = 0;
+            }
+        }
+        update_LR(nUser, nItem, nFeat);   
+        multiply_LR(nUser, nItem, nFeat);    
 
+    }
 
-
+    for(int i = 0; i < nUser; i++){
+        for(int j = 0; j < nItem; j++)
+            printf("%lf  ", B[i][j]);
+        printf("\n");
     }
 
 /****************************************************************/
 
-    fclose(fp);
     free(A);
     free_LR(nUser, nFeat);
 
@@ -79,19 +114,27 @@ int main(int argc, char *argv[]){
 
 void alloc_LR(int nU, int nI, int nF){
 
+    //Functional Parallelism
     B = (double**)malloc(sizeof(double)*nU);
     L = (double**)malloc(sizeof(double)*nU);
+    newL = (double**)malloc(sizeof(double)*nU);
     R = (double**)malloc(sizeof(double)*nF);
+    newR = (double**)malloc(sizeof(double)*nF);
 
     //Data Parallelism
 	for (int i = 0; i < nU; i++)
 		B[i] = (double *)malloc(sizeof(double)  * nI);
     //Data Parallelism
-	for (int i = 0; i < nU; i++)
-		L[i] = (double *)malloc(sizeof(double)  * nF);
+	for (int i = 0; i < nU; i++){
+        L[i] = (double *)malloc(sizeof(double)  * nF);
+        newL[i] = (double *)malloc(sizeof(double)  * nF);
+    }
     //Data Parallelism
-    for (int i = 0; i < nF; i++)
-		R[i] = (double *)malloc(sizeof(double) * nI);
+    for (int i = 0; i < nF; i++){
+	    R[i] = (double *)malloc(sizeof(double) * nI);
+        newR[i] = (double *)malloc(sizeof(double) * nI);
+    }
+	
 }
 
 
@@ -101,54 +144,61 @@ void random_fill_LR(int nU, int nI, int nF)
     
     //Data Parallelism
     for(int i = 0; i < nU; i++)
-        for(int j = 0; j < nF; j++)
+        for(int j = 0; j < nF; j++){
             L[i][j] = RAND01 / (double) nF;
+            newL[i][j] = L[i][j]; 
+        }
     
     //Data Parallelism
     for(int i = 0; i < nF; i++)
-        for(int j = 0; j < nI; j++)
+        for(int j = 0; j < nI; j++){
             R[i][j] = RAND01 / (double) nF;
-}
+            newR[i][j] = R[i][j];
+        }
+    
+    multiply_LR(nU, nI, nF);    
+}           
 
 void free_LR(int nU, int nF){
 
     //Data Parallelism
 	for(int i=0; i<nU; i++) free(B[i]);
-	free(L);
+	free(B);
 
     //Data Parallelism
 	for(int i=0; i<nU; i++) free(L[i]);
 	free(L);
 
     //Data Parallelism
+	for(int i=0; i<nU; i++) free(newL[i]);
+	free(newL);
+
+    //Data Parallelism
+    for(int i=0; i<nF; i++) free(newR[i]);
+	free(newR);
+
+    //Data Parallelism
     for(int i=0; i<nF; i++) free(R[i]);
 	free(R);
 }
 
+void update_LR(int nU, int nI, int nF){
+    //Data Parallelism
+    for(int i = 0; i < nU; i++)
+        for(int k = 0; k < nF; k++)
+            L[i][k] = newL[i][k];
+        
+    //Data Parallelism
+    for(int k = 0; k < nF; k++)
+        for(int j = 0; j < nI; j++)
+            R[k][j] = newR[k][j];       
+}
 
-/*main(int argc, char *argv[]){
-    int fd;
-    char *filename;
-
-    if(argc != 2){
-		printf("error: command of type matFact <filename.in>\n");
-		exit(1);
-	}
-    else{ strcpy(filename, argv[1]); }
-
-    fd = fileno(filename);
-}*/
-
-
-/*for(int i = 0; i < nUser; i++)
-        for(int j = 0; j < nFeat; j++)
-            printf("%lf    \n", L[i][j]);
-    for(int i = 0; i < nFeat; i++)
-        for(int j = 0; j < nItem; j++)
-            printf("%lf    \n", R[i][j]);
-
-    for(int i = 0; i < noEntry; i++){
-        printf("%d %d %lf\n", A[i].column, A[i].row, A[i].rate);
-    }*/
-
-    //printf("%d   %lf   %d   %d   %d   %d\n", nIter, alpha, nFeat, nUser, nItem,nZero);
+void multiply_LR(int nU, int nI, int nF){
+    
+    //Data Parallelism
+    for(int i = 0; i < nU; i++)
+        for(int j = 0; j < nI; j++)
+            for(int k = 0; k < nF; k++)
+                B[i][j] += L[i][k]*R[k][j];
+}
