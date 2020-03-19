@@ -4,8 +4,6 @@
 #include <string.h>
 #include <signal.h>
 #include <stdio.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
 
 #define RAND01 ((double)random() / (double)RAND_MAX)
@@ -16,15 +14,11 @@ typedef struct entryA{
     double rate;
 }entryA;
 
-double **L, **R, **B, **newL, **newR;
-
-entryA* A;
-
-void random_fill_LR(int nU, int nI, int nF);
-void alloc_LR(int nU, int nI, int nF);
-void free_LR(int nU, int nF);
-void update_LR(int nU, int nI, int nF);
-void multiply_LR(int nU, int nI, int nF);
+void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
+void alloc_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B);
+void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B);
+void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
+void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B);
 
 /****************************************************************/
 
@@ -33,6 +27,8 @@ int main(int argc, char *argv[]){
     int nIter, nFeat, nUser, nItem, nZero, nEntry;
     double deriv = 0;
     double alpha;
+    double **L, **R, **B, **newL, **newR;
+    entryA* A;
 
     if(argc != 2){
 		printf("error: command of type ./matFact <filename.in>\n");
@@ -59,9 +55,11 @@ int main(int argc, char *argv[]){
         fscanf(fp, "%d %d %lf", &(A[i].row), &(A[i].column), &(A[i].rate));
     }
 
-    alloc_LR(nUser, nItem, nFeat);
-    random_fill_LR(nUser, nItem, nFeat);
     fclose(fp);
+
+    alloc_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
+    random_fill_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
+    multiply_LR(nUser, nItem, nFeat, &L, &R, &B);    
 
 /****************************************************************/
  
@@ -93,118 +91,114 @@ int main(int argc, char *argv[]){
             }
         }
   
-        update_LR(nUser, nItem, nFeat);   
-        multiply_LR(nUser, nItem, nFeat);   
+        update_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);   
+        multiply_LR(nUser, nItem, nFeat, &L, &R, &B);   
     }
 
     for(int i = 0; i < nUser; i++){
-            for(int j = 0; j < nItem; j++)
-                printf("%lf  ", B[i][j]);
-            printf("\n");
+        for(int j = 0; j < nItem; j++)
+            printf("%lf  ", B[i][j]);
+        printf("\n");
     }    
 
 /****************************************************************/
 
     free(A);
-    free_LR(nUser, nFeat);
+    free_LR(nUser, nFeat, &L, &R, &newR, &newL, &B);
 
     return 0;
 }
 
 
-void alloc_LR(int nU, int nI, int nF){
+void alloc_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B){
 
     //Functional Parallelism
-    B = (double**)malloc(sizeof(double)*nU);
-    L = (double**)malloc(sizeof(double)*nU);
-    newL = (double**)malloc(sizeof(double)*nU);
-    R = (double**)malloc(sizeof(double)*nF);
-    newR = (double**)malloc(sizeof(double)*nF);
+    *B = (double**)malloc(sizeof(double*)*nU);
+    *L = (double**)malloc(sizeof(double*)*nU);
+    *newL = (double**)malloc(sizeof(double*)*nU);
+    *R = (double**)malloc(sizeof(double*)*nF);
+    *newR = (double**)malloc(sizeof(double*)*nF);
 
     //Data Parallelism
 	for (int i = 0; i < nU; i++)
-		B[i] = (double *)malloc(sizeof(double)*nI);
+		(*B)[i] = (double*)malloc(sizeof(double)*nI);
     //Data Parallelism
 	for (int i = 0; i < nU; i++){
-        L[i] = (double *)malloc(sizeof(double) *nF);
-        newL[i] = (double *)malloc(sizeof(double)*nF);
+        (*L)[i] = (double *)malloc(sizeof(double) *nF);
+        (*newL)[i] = (double *)malloc(sizeof(double)*nF);
     }
+
     //Data Parallelism
     for (int i = 0; i < nF; i++){
-	    R[i] = (double *)malloc(sizeof(double)*nI);
-        newR[i] = (double *)malloc(sizeof(double) *nI);
-    }
-	
+	    (*R)[i] = (double *)malloc(sizeof(double)*nI);
+        (*newR)[i] = (double *)malloc(sizeof(double)*nI);
+    }	
 }
 
 
-void random_fill_LR(int nU, int nI, int nF)
+void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR)
 {
     srandom(0);
     
     //Data Parallelism
     for(int i = 0; i < nU; i++)
         for(int j = 0; j < nF; j++){
-            L[i][j] = RAND01 / (double) nF;
-            newL[i][j] = L[i][j]; 
+            (*L)[i][j] = RAND01 / (double) nF;
+            (*newL)[i][j] = (*L)[i][j]; 
         }
     
     //Data Parallelism
     for(int i = 0; i < nF; i++)
         for(int j = 0; j < nI; j++){
-            R[i][j] = RAND01 / (double) nF;
-            newR[i][j] = R[i][j];
+            (*R)[i][j] = RAND01 / (double) nF;
+            (*newR)[i][j] = (*R)[i][j];
         }
-
-    multiply_LR(nU, nI, nF);    
-
-    
 }           
 
-void free_LR(int nU, int nF){
+void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B){
 
     //Data Parallelism
-	for(int i=0; i<nU; i++) free(B[i]);
-	free(B);
+	for(int i=0; i<nU; i++) free((*B)[i]);
+	free(*B);
 
     //Data Parallelism
-	for(int i=0; i<nU; i++) free(L[i]);
-	free(L);
+	for(int i=0; i<nU; i++) free((*L)[i]);
+	free(*L);
 
     //Data Parallelism
-	for(int i=0; i<nU; i++) free(newL[i]);
-	free(newL);
+	for(int i=0; i<nU; i++) free((*newL)[i]);
+	free(*newL);
 
     //Data Parallelism
-    for(int i=0; i<nF; i++) free(newR[i]);
-	free(newR);
+    for(int i=0; i<nF; i++) free((*newR)[i]);
+	free(*newR);
 
     //Data Parallelism
-    for(int i=0; i<nF; i++) free(R[i]);
-	free(R);
+    for(int i=0; i<nF; i++) free((*R)[i]);
+	free(*R);
 }
 
-void update_LR(int nU, int nI, int nF){
+void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR){
 
     double **aux;
-    aux = L;
-    L = newL;
-    newL = aux;
+    aux = *L;
+    *L = *newL;
+    *newL = aux;
 
-    aux = R;
-    R = newR;
-    newR = aux;
+    aux = *R;
+    *R = *newR;
+    *newR = aux;
 }
 
-void multiply_LR(int nU, int nI, int nF){
+void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B){
     
     for(int i = 0; i < nU; i++)
         for(int j = 0; j < nI; j++)
-            B[i][j] = 0;
+            (*B)[i][j] = 0;
 
     //Data Parallelism
     for(int i = 0; i < nU; i++)
         for(int j = 0; j < nI; j++)
             for(int k = 0; k < nF; k++)
-                B[i][j] += L[i][k]*R[k][j];
+                (*B)[i][j] += (*L)[i][k]*(*R)[k][j];
 }
