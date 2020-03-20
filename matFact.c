@@ -100,38 +100,6 @@ int main(int argc, char *argv[]){
     free(A_item_aux);
     free(A_user_aux);
 
-
-
-    /* Print da Info guardada no MAP
-
-    for(int i = 0; i < nUser; i++){
-
-        A_aux1 = A_user[i];
-
-        while(A_aux1 != NULL){
-
-            printf("%d %d %lf\n", A_aux1->user, A_aux1->item, A_aux1->rate);
-            A_aux1 = A_aux1->nextItem;
-        }
-        
-    }
-
-    printf("\n\n");
-
-    for(int i = 0; i < nItem; i++){
-
-        A_aux1 = A_item[i];
-
-        while(A_aux1 != NULL){
-
-            printf("%d %d %lf\n", A_aux1->user, A_aux1->item, A_aux1->rate);
-            A_aux1 = A_aux1->nextUser;
-        }
-        
-    }
-
-    */
-
     alloc_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
     random_fill_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
     multiply_LR(nUser, nItem, nFeat, &L, &R, &B);    
