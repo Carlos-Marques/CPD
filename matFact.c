@@ -4,21 +4,29 @@
 #include <string.h>
 #include <signal.h>
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 
 #define RAND01 ((double)random() / (double)RAND_MAX)
 
 typedef struct entryA{
-    int row;
-    int column;
+    int user;
+    int item;
     double rate;
+    struct entryA* nextItem;
+    struct entryA* nextUser;
 }entryA;
 
-void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
+double **L, **R, **B, **newL, **newR;
+
+entryA* createNode();
+
 void alloc_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B);
-void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B);
-void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
+void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
 void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B);
+void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
+void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B);
 
 /****************************************************************/
 
@@ -28,7 +36,9 @@ int main(int argc, char *argv[]){
     double deriv = 0;
     double alpha;
     double **L, **R, **B, **newL, **newR;
-    entryA* A;
+
+    entryA **A_user, **A_user_aux, **A_item, **A_item_aux;
+    entryA *A_aux1, *A_aux2;
 
     if(argc != 2){
 		printf("error: command of type ./matFact <filename.in>\n");
@@ -48,44 +58,115 @@ int main(int argc, char *argv[]){
     fscanf(fp, "%d", &nFeat);
     fscanf(fp, "%d %d %d", &nUser, &nItem, &nEntry);
 
-    A = (entryA*)malloc(sizeof(entryA)*nEntry);
+    A_user = (entryA**)calloc(sizeof(entryA*), nUser);
+    A_item = (entryA**)calloc(sizeof(entryA*), nItem);
+
+    A_user_aux = (entryA**)calloc(sizeof(entryA*), nUser);
+    A_item_aux = (entryA**)calloc(sizeof(entryA*), nItem);
 
     //Data Parallelism
     for(int i = 0; i < nEntry; i++){
-        fscanf(fp, "%d %d %lf", &(A[i].row), &(A[i].column), &(A[i].rate));
+        
+        A_aux1 = createNode();
+        
+        fscanf(fp, "%d %d %lf", &(A_aux1->user), &(A_aux1->item), &(A_aux1->rate));
+
+        if(A_user[A_aux1->user] == NULL){
+
+            A_user[A_aux1->user] = A_aux1;
+            A_user_aux[A_aux1->user] = A_aux1;
+
+        }else{
+
+            A_user_aux[A_aux1->user]->nextItem = A_aux1;
+            A_user_aux[A_aux1->user] = A_aux1;
+        }
+
+
+
+        if(A_item[A_aux1->item] == NULL){
+
+            A_item[A_aux1->item] = A_aux1;
+            A_item_aux[A_aux1->item] = A_aux1;
+
+        }else{
+
+            A_item_aux[A_aux1->item]->nextUser = A_aux1;
+            A_item_aux[A_aux1->item] = A_aux1;
+        }
     }
 
     fclose(fp);
+    free(A_item_aux);
+    free(A_user_aux);
+
+
+
+    /* Print da Info guardada no MAP
+
+    for(int i = 0; i < nUser; i++){
+
+        A_aux1 = A_user[i];
+
+        while(A_aux1 != NULL){
+
+            printf("%d %d %lf\n", A_aux1->user, A_aux1->item, A_aux1->rate);
+            A_aux1 = A_aux1->nextItem;
+        }
+        
+    }
+
+    printf("\n\n");
+
+    for(int i = 0; i < nItem; i++){
+
+        A_aux1 = A_item[i];
+
+        while(A_aux1 != NULL){
+
+            printf("%d %d %lf\n", A_aux1->user, A_aux1->item, A_aux1->rate);
+            A_aux1 = A_aux1->nextUser;
+        }
+        
+    }
+
+    */
 
     alloc_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
     random_fill_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
     multiply_LR(nUser, nItem, nFeat, &L, &R, &B);    
 
-/****************************************************************/
- 
+    /****************************End Setup****************************/
+
+    /***********************Matrix Factorization**********************/
     for(int n = 0; n < nIter; n++){
 
+        
+        //Matrix L
         for(int i = 0; i < nUser; i++){
             for(int k = 0; k < nFeat; k++){
 
-                for(int m = 0; m < nEntry; m++){
-                    if(A[m].row == i){
-                        deriv += 2*(A[m].rate - B[i][A[m].column])*(-R[k][A[m].column]);
-                    }
+                A_aux1 = A_user[i];
+                while(A_aux1 != NULL){
+                    deriv += 2*(A_aux1->rate - B[i][A_aux1->item])*(-R[k][A_aux1->item]);
+                    A_aux1 = A_aux1->nextItem;
                 }
+
                 newL[i][k] = L[i][k]-alpha*deriv;
                 deriv = 0;
             }
         }
 
+        //Matrix R
         for(int k = 0; k < nFeat; k++){
             for(int j = 0; j < nItem; j++){
 
-                for(int m = 0; m < nEntry; m++){
-                    if(A[m].column == j){
-                        deriv += 2*(A[m].rate - B[A[m].row][j])*(-L[A[m].row][k]);
-                    }
+                A_aux1 = A_item[j];
+                while(A_aux1 != NULL){
+                    deriv += 2*(A_aux1->rate - B[A_aux1->user][j])*(-L[A_aux1->user][k]);
+                    A_aux1 = A_aux1->nextUser;
                 }
+
                 newR[k][j] = R[k][j]-alpha*deriv;
                 deriv = 0;
             }
@@ -94,6 +175,7 @@ int main(int argc, char *argv[]){
         update_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);   
         multiply_LR(nUser, nItem, nFeat, &L, &R, &B);   
     }
+    /*********************End Matrix Factorization********************/
 
     for(int i = 0; i < nUser; i++){
         for(int j = 0; j < nItem; j++)
@@ -101,12 +183,36 @@ int main(int argc, char *argv[]){
         printf("\n");
     }    
 
-/****************************************************************/
+    /******************************Free A*****************************/
+    for(int i = 0; i < nUser; i++){
 
-    free(A);
+        A_aux1 = A_user[i];
+
+        while(A_aux1 != NULL){
+            A_aux2 = A_aux1->nextItem;
+            free(A_aux1);
+            A_aux1 = A_aux2;
+        }
+        
+    }
+    free(A_user);
+    free(A_item);
+    /*****************************************************************/
+
     free_LR(nUser, nFeat, &L, &R, &newL, &newR, &B);
 
     return 0;
+}
+
+entryA* createNode(){
+
+    entryA *A;
+    A = (entryA*)malloc(sizeof(entryA));
+    A->nextItem = NULL;
+    A->
+    nextUser = NULL;
+
+    return A;
 }
 
 
@@ -151,19 +257,8 @@ void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***
             (*R)[i][j] = RAND01 / (double) nF;
             (*newR)[i][j] = (*R)[i][j];
         }
-}           
+}   
 
-void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR){
-
-    double **aux;
-    aux = *L;
-    *L = *newL;
-    *newL = aux;
-
-    aux = *R;
-    *R = *newR;
-    *newR = aux;
-}
 
 void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B){
     
@@ -176,6 +271,19 @@ void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B){
         for(int j = 0; j < nI; j++)
             for(int k = 0; k < nF; k++)
                 (*B)[i][j] += (*L)[i][k]*(*R)[k][j];
+}
+
+
+void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR){
+
+    double **aux;
+    aux = *L;
+    *L = *newL;
+    *newL = aux;
+
+    aux = *R;
+    *R = *newR;
+    *newR = aux;
 }
 
 void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B){
