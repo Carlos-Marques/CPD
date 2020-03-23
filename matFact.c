@@ -18,11 +18,11 @@ typedef struct entryA{
     struct entryA* nextUser;
 }entryA;
 
-void alloc_A(int nU, int nI, entryA ***_A_user, entryA ***_A_item, entryA ***_A_user_aux, entryA ***_A_item_aux);
+double **L, **R, **B, **newL, **newR;
 
 entryA* createNode();
 
-void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B);
+void alloc_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B);
 void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
 void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B);
 void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
@@ -60,11 +60,15 @@ int main(int argc, char *argv[]){
     fscanf(fp, "%d", &nFeat);
     fscanf(fp, "%d %d %d", &nUser, &nItem, &nEntry);
 
-    alloc_A(nUser, nItem, &A_user, &A_item, &A_user_aux, &A_item_aux);
+    A_user = (entryA**)calloc(sizeof(entryA*), nUser);
+    A_item = (entryA**)calloc(sizeof(entryA*), nItem);
+
+    A_user_aux = (entryA**)calloc(sizeof(entryA*), nUser);
+    A_item_aux = (entryA**)calloc(sizeof(entryA*), nItem);
 
     solution = (int*)malloc(sizeof(int)*nUser);
 
-    //Fill A
+    //Data Parallelism
     for(int i = 0; i < nEntry; i++){
         
         A_aux1 = createNode();
@@ -100,7 +104,7 @@ int main(int argc, char *argv[]){
     free(A_item_aux);
     free(A_user_aux);
 
-    alloc_LRB(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
+    alloc_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
     random_fill_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
     multiply_LR(nUser, nItem, nFeat, &L, &R, &B);    
 
@@ -214,15 +218,6 @@ int main(int argc, char *argv[]){
     return 0;
 }
 
-void alloc_A(int nU, int nI, entryA ***_A_user, entryA ***_A_item, entryA ***_A_user_aux, entryA ***_A_item_aux){
-
-    *_A_user = (entryA**)calloc(sizeof(entryA*), nU);
-    *_A_item = (entryA**)calloc(sizeof(entryA*), nI);
-
-    *_A_user_aux = (entryA**)calloc(sizeof(entryA*), nU);
-    *_A_item_aux = (entryA**)calloc(sizeof(entryA*), nI);
-}
-
 entryA* createNode(){
 
     entryA *A;
@@ -235,7 +230,7 @@ entryA* createNode(){
 }
 
 
-void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B){
+void alloc_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B){
 
     //Functional Parallelism
     *B = (double**)malloc(sizeof(double*)*nU);
