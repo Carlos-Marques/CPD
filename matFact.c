@@ -32,11 +32,12 @@ void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double **
 
 int main(int argc, char *argv[]){
     FILE *fp;
-    int nIter, nFeat, nUser, nItem, nZero, nEntry, B_item;
+    int nIter, nFeat, nUser, nItem, nZero, nEntry, B_item, intAux;
     int *solution;
     double deriv = 0;
     double alpha, sol_aux;
     double **L, **R, **B, **newL, **newR;
+    char *outputFile;
 
     entryA **A_user, **A_user_aux, **A_item, **A_item_aux;
     entryA *A_aux1, *A_aux2;
@@ -178,13 +179,22 @@ int main(int argc, char *argv[]){
         }
     }
 
-    for(int i = 0; i < nUser; i++){
-        printf("%d\n", solution[i]);
-    }  
+    /****************************Write File***************************/
+    outputFile = strtok(argv[1], ".");
+    strcat(outputFile, ".out\0");
 
+    fp = fopen(outputFile, "w");
+    if(fp == NULL){
+        printf("error: cannot open file\n");
+		exit(1);
+    }
 
+    for(int i=0; i<nUser; i++){
+        fprintf(fp, "%d\n", solution[i]);
+    }
 
-
+    fclose(fp);
+    /*****************************************************************/
 
     /******************************Free A*****************************/
     for(int i = 0; i < nUser; i++){
