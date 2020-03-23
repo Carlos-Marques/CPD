@@ -32,9 +32,10 @@ void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double **
 
 int main(int argc, char *argv[]){
     FILE *fp;
-    int nIter, nFeat, nUser, nItem, nZero, nEntry;
+    int nIter, nFeat, nUser, nItem, nZero, nEntry, B_item;
+    int *solution;
     double deriv = 0;
-    double alpha;
+    double alpha, sol_aux;
     double **L, **R, **B, **newL, **newR;
 
     entryA **A_user, **A_user_aux, **A_item, **A_item_aux;
@@ -63,6 +64,8 @@ int main(int argc, char *argv[]){
 
     A_user_aux = (entryA**)calloc(sizeof(entryA*), nUser);
     A_item_aux = (entryA**)calloc(sizeof(entryA*), nItem);
+
+    solution = (int*)malloc(sizeof(int)*nUser);
 
     //Data Parallelism
     for(int i = 0; i < nEntry; i++){
@@ -143,13 +146,45 @@ int main(int argc, char *argv[]){
         update_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);   
         multiply_LR(nUser, nItem, nFeat, &L, &R, &B);   
     }
-    /*********************End Matrix Factorization********************/
+    /*********************End Matrix Factorization********************/  
+
+    for(int k = 0; k < nUser; k++){
+        B_item=0;
+        sol_aux=0;
+        A_aux1 = A_user[k];
+
+        while(A_aux1 != NULL){
+            while(B_item != A_aux1->item){
+
+                if(B[k][B_item] > sol_aux){
+                    solution[k]=B_item;
+                    sol_aux = B[k][B_item];
+                }
+
+                B_item++;
+            }
+
+            B_item++;
+            A_aux1 = A_aux1->nextItem;
+        }
+
+        while(B_item < nItem){
+            if(B[k][B_item] > sol_aux){
+                solution[k]=B_item;
+                sol_aux = B[k][B_item];
+            }
+
+            B_item++;  
+        }
+    }
 
     for(int i = 0; i < nUser; i++){
-        for(int j = 0; j < nItem; j++)
-            printf("%lf  ", B[i][j]);
-        printf("\n");
-    }    
+        printf("%d\n", solution[i]);
+    }  
+
+
+
+
 
     /******************************Free A*****************************/
     for(int i = 0; i < nUser; i++){
@@ -166,7 +201,8 @@ int main(int argc, char *argv[]){
     free(A_user);
     free(A_item);
     /*****************************************************************/
-
+    
+    free(solution);
     free_LR(nUser, nFeat, &L, &R, &newL, &newR, &B);
 
     return 0;
