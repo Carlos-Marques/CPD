@@ -1,2 +1,2 @@
-matFact: matFact.c
-	gcc matFact.c -o matFact
+matFact: Serial/matFact.c
+	gcc Serial/matFact.c -o matFact
