@@ -25,7 +25,7 @@ entryA* createNode();
 void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B);
 void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
 void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B);
-void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
+void update_LR(double ***L, double ***R, double ***newL, double ***newR);
 void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B);
 
 /****************************************************************/
@@ -140,7 +140,7 @@ int main(int argc, char *argv[]){
             }
         }
   
-        update_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
+        update_LR(&L, &R, &newL, &newR);
         multiply_LR(nUser, nItem, nFeat, &L, &R, &B);
     }
     /*********************End Matrix Factorization********************/  
@@ -292,7 +292,7 @@ void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B){
 }
 
 
-void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR){
+void update_LR(double ***L, double ***R, double ***newL, double ***newR){
 
     double **aux;
     aux = *L;
