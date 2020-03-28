@@ -32,7 +32,7 @@ void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double **
 
 int main(int argc, char *argv[]){
     FILE *fp;
-    int nIter, nFeat, nUser, nItem, nZero, nEntry, B_item, intAux;
+    int nIter, nFeat, nUser, nItem, nEntry, B_item;
     int *solution;
     double deriv = 0;
     double alpha, sol_aux;
@@ -102,7 +102,7 @@ int main(int argc, char *argv[]){
 
     alloc_LRB(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
     random_fill_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
-    multiply_LR(nUser, nItem, nFeat, &L, &R, &B);    
+    multiply_LR(nUser, nItem, nFeat, &L, &R, &B);
 
     /****************************End Setup****************************/
 
@@ -140,8 +140,8 @@ int main(int argc, char *argv[]){
             }
         }
   
-        update_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);   
-        multiply_LR(nUser, nItem, nFeat, &L, &R, &B);   
+        update_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
+        multiply_LR(nUser, nItem, nFeat, &L, &R, &B);
     }
     /*********************End Matrix Factorization********************/  
 
@@ -171,7 +171,7 @@ int main(int argc, char *argv[]){
                 sol_aux = B[k][B_item];
             }
 
-            B_item++;  
+            B_item++;
         }
     }
 
@@ -228,8 +228,7 @@ entryA* createNode(){
     entryA *A;
     A = (entryA*)malloc(sizeof(entryA));
     A->nextItem = NULL;
-    A->
-    nextUser = NULL;
+    A->nextUser = NULL;
 
     return A;
 }
@@ -267,7 +266,7 @@ void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***
     for(int i = 0; i < nU; i++)
         for(int j = 0; j < nF; j++){
             (*L)[i][j] = RAND01 / (double) nF;
-            (*newL)[i][j] = (*L)[i][j]; 
+            (*newL)[i][j] = (*L)[i][j];
         }
     
     //Data Parallelism
