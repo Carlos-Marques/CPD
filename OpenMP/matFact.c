@@ -18,11 +18,11 @@ typedef struct entryA{
     struct entryA* nextUser;
 }entryA;
 
-double **L, **R, **B, **newL, **newR;
+void alloc_A(int nU, int nI, entryA ***_A_user, entryA ***_A_item, entryA ***_A_user_aux, entryA ***_A_item_aux);
 
 entryA* createNode();
 
-void alloc_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B);
+void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B);
 void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
 void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B);
 void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
@@ -32,10 +32,12 @@ void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double **
 
 int main(int argc, char *argv[]){
     FILE *fp;
-    int nIter, nFeat, nUser, nItem, nZero, nEntry;
+    int nIter, nFeat, nUser, nItem, nZero, nEntry, B_item, intAux;
+    int *solution;
     double deriv = 0;
-    double alpha;
+    double alpha, sol_aux;
     double **L, **R, **B, **newL, **newR;
+    char *outputFile;
 
     entryA **A_user, **A_user_aux, **A_item, **A_item_aux;
     entryA *A_aux1, *A_aux2;
@@ -58,13 +60,11 @@ int main(int argc, char *argv[]){
     fscanf(fp, "%d", &nFeat);
     fscanf(fp, "%d %d %d", &nUser, &nItem, &nEntry);
 
-    A_user = (entryA**)calloc(sizeof(entryA*), nUser);
-    A_item = (entryA**)calloc(sizeof(entryA*), nItem);
+    alloc_A(nUser, nItem, &A_user, &A_item, &A_user_aux, &A_item_aux);
 
-    A_user_aux = (entryA**)calloc(sizeof(entryA*), nUser);
-    A_item_aux = (entryA**)calloc(sizeof(entryA*), nItem);
+    solution = (int*)malloc(sizeof(int)*nUser);
 
-    //Data Parallelism
+    //Fill A
     for(int i = 0; i < nEntry; i++){
         
         A_aux1 = createNode();
@@ -100,7 +100,7 @@ int main(int argc, char *argv[]){
     free(A_item_aux);
     free(A_user_aux);
 
-    alloc_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
+    alloc_LRB(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
     random_fill_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
     multiply_LR(nUser, nItem, nFeat, &L, &R, &B);    
 
@@ -143,13 +143,54 @@ int main(int argc, char *argv[]){
         update_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);   
         multiply_LR(nUser, nItem, nFeat, &L, &R, &B);   
     }
-    /*********************End Matrix Factorization********************/
+    /*********************End Matrix Factorization********************/  
 
-    for(int i = 0; i < nUser; i++){
-        for(int j = 0; j < nItem; j++)
-            printf("%lf  ", B[i][j]);
-        printf("\n");
-    }    
+    for(int k = 0; k < nUser; k++){
+        B_item=0;
+        sol_aux=0;
+        A_aux1 = A_user[k];
+
+        while(A_aux1 != NULL){
+            while(B_item != A_aux1->item){
+
+                if(B[k][B_item] > sol_aux){
+                    solution[k]=B_item;
+                    sol_aux = B[k][B_item];
+                }
+
+                B_item++;
+            }
+
+            B_item++;
+            A_aux1 = A_aux1->nextItem;
+        }
+
+        while(B_item < nItem){
+            if(B[k][B_item] > sol_aux){
+                solution[k]=B_item;
+                sol_aux = B[k][B_item];
+            }
+
+            B_item++;  
+        }
+    }
+
+    /****************************Write File***************************/
+    outputFile = strtok(argv[1], ".");
+    strcat(outputFile, ".out\0");
+
+    fp = fopen(outputFile, "w");
+    if(fp == NULL){
+        printf("error: cannot open file\n");
+		exit(1);
+    }
+
+    for(int i=0; i<nUser; i++){
+        fprintf(fp, "%d\n", solution[i]);
+    }
+
+    fclose(fp);
+    /*****************************************************************/
 
     /******************************Free A*****************************/
     for(int i = 0; i < nUser; i++){
@@ -166,10 +207,20 @@ int main(int argc, char *argv[]){
     free(A_user);
     free(A_item);
     /*****************************************************************/
-
+    
+    free(solution);
     free_LR(nUser, nFeat, &L, &R, &newL, &newR, &B);
 
     return 0;
+}
+
+void alloc_A(int nU, int nI, entryA ***_A_user, entryA ***_A_item, entryA ***_A_user_aux, entryA ***_A_item_aux){
+
+    *_A_user = (entryA**)calloc(sizeof(entryA*), nU);
+    *_A_item = (entryA**)calloc(sizeof(entryA*), nI);
+
+    *_A_user_aux = (entryA**)calloc(sizeof(entryA*), nU);
+    *_A_item_aux = (entryA**)calloc(sizeof(entryA*), nI);
 }
 
 entryA* createNode(){
@@ -184,7 +235,7 @@ entryA* createNode(){
 }
 
 
-void alloc_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B){
+void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B){
 
     //Functional Parallelism
     *B = (double**)malloc(sizeof(double*)*nU);
