@@ -1,1 +1,0 @@
-int OMP_NUM_THREADS = 1

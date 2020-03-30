@@ -147,18 +147,8 @@ int main(int argc, char *argv[]){
         A_aux1 = A_user[k];
 
         while(A_aux1 != NULL){
-            while(B_item != A_aux1->item){
-
-                if(B[k][B_item] > sol_aux){
-                    solution[k]=B_item;
-                    sol_aux = B[k][B_item];
-                }
-
-                B_item++;
-            }
-
-            B_item++;
-            A_aux1 = A_aux1->nextItem;
+          B[k][A_aux1->item] = 0;
+          A_aux1 = A_aux1->nextItem;
         }
 
         while(B_item < nItem){
