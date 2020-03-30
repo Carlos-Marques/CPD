@@ -66,9 +66,7 @@ int main(int argc, char *argv[]){
 
     //Fill A
     for(int i = 0; i < nEntry; i++){
-        
         A_aux1 = createNode();
-        
         fscanf(fp, "%d %d %lf", &(A_aux1->user), &(A_aux1->item), &(A_aux1->rate));
 
         if(A_user[A_aux1->user] == NULL){
@@ -108,8 +106,6 @@ int main(int argc, char *argv[]){
 
     /***********************Matrix Factorization**********************/
     for(int n = 0; n < nIter; n++){
-
-        
         //Matrix L
         for(int i = 0; i < nUser; i++){
             for(int k = 0; k < nFeat; k++){
@@ -139,11 +135,11 @@ int main(int argc, char *argv[]){
                 deriv = 0;
             }
         }
-  
+
         update_LR(&L, &R, &newL, &newR);
         multiply_LR(nUser, nItem, nFeat, &L, &R, &B);
     }
-    /*********************End Matrix Factorization********************/  
+    /*********************End Matrix Factorization********************/
 
     for(int k = 0; k < nUser; k++){
         B_item=0;
@@ -151,18 +147,8 @@ int main(int argc, char *argv[]){
         A_aux1 = A_user[k];
 
         while(A_aux1 != NULL){
-            while(B_item != A_aux1->item){
-
-                if(B[k][B_item] > sol_aux){
-                    solution[k]=B_item;
-                    sol_aux = B[k][B_item];
-                }
-
-                B_item++;
-            }
-
-            B_item++;
-            A_aux1 = A_aux1->nextItem;
+          B[k][A_aux1->item] = 0;
+          A_aux1 = A_aux1->nextItem;
         }
 
         while(B_item < nItem){
@@ -202,12 +188,10 @@ int main(int argc, char *argv[]){
             free(A_aux1);
             A_aux1 = A_aux2;
         }
-        
     }
     free(A_user);
     free(A_item);
     /*****************************************************************/
-    
     free(solution);
     free_LR(nUser, nFeat, &L, &R, &newL, &newR, &B);
 
@@ -254,32 +238,29 @@ void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
     for (int i = 0; i < nF; i++){
 	    (*R)[i] = (double *)malloc(sizeof(double)*nI);
         (*newR)[i] = (double *)malloc(sizeof(double)*nI);
-    }	
+    }
 }
 
 
 void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR)
 {
     srandom(0);
-    
     //Data Parallelism
     for(int i = 0; i < nU; i++)
         for(int j = 0; j < nF; j++){
             (*L)[i][j] = RAND01 / (double) nF;
             (*newL)[i][j] = (*L)[i][j];
         }
-    
     //Data Parallelism
     for(int i = 0; i < nF; i++)
         for(int j = 0; j < nI; j++){
             (*R)[i][j] = RAND01 / (double) nF;
             (*newR)[i][j] = (*R)[i][j];
         }
-}   
+}
 
 
 void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B){
-    
     for(int i = 0; i < nU; i++)
         for(int j = 0; j < nI; j++)
             (*B)[i][j] = 0;
@@ -311,7 +292,7 @@ void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double **
         free((*B)[i]);
         free((*L)[i]);
         free((*newL)[i]);
-    } 
+    }
 	free(*B);
 	free(*L);
 	free(*newL);
@@ -320,7 +301,7 @@ void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double **
     for(int i=0; i<nF; i++){
         free((*R)[i]);
         free((*newR)[i]);
-    } 
+    }
 	free(*newR);
 	free(*R);
 }
