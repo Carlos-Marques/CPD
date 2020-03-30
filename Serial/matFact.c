@@ -212,8 +212,7 @@ entryA* createNode(){
     entryA *A;
     A = (entryA*)malloc(sizeof(entryA));
     A->nextItem = NULL;
-    A->
-    nextUser = NULL;
+    A->nextUser = NULL;
 
     return A;
 }
