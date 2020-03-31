@@ -1,38 +1,59 @@
 /**************************Declarations**************************/
 
-#include <stdlib.h>
-#include <string.h>
+#include <fcntl.h>
+#include <omp.h>
 #include <signal.h>
 #include <stdio.h>
-#include <sys/types.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
-#include <fcntl.h>
+#include <sys/types.h>
 
 #define RAND01 ((double)random() / (double)RAND_MAX)
 
-typedef struct entryA{
-    int user;
-    int item;
-    double rate;
-    struct entryA* nextItem;
-    struct entryA* nextUser;
-}entryA;
+typedef struct entryA {
+  int user;
+  int item;
+  double rate;
+  struct entryA *nextItem;
+  struct entryA *nextUser;
+} entryA;
 
-void alloc_A(int nU, int nI, entryA ***_A_user, entryA ***_A_item, entryA ***_A_user_aux, entryA ***_A_item_aux);
+void alloc_A(int nU, int nI, entryA ***_A_user, entryA ***_A_item,
+             entryA ***_A_user_aux, entryA ***_A_item_aux);
 
-entryA* createNode();
+entryA *createNode();
 
-void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B);
-void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
+void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
+               double ***newR, double ***B);
+void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R,
+                    double ***newL, double ***newR);
 void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B);
-void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR);
+<<<<<<< HEAD
+void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
+               double ***newR);
+void free_LR(int nU, int nF, double ***L, double ***R, double ***newL,
+             double ***newR, double ***B);
+
+/****************************************************************/
+
+int main(int argc, char *argv[]) {
+  FILE *fp;
+  int nIter, nFeat, nUser, nItem, nZero, nEntry, B_item, intAux;
+  int *solution;
+  double deriv = 0;
+  double alpha, sol_aux;
+  double **L, **R, **B, **newL, **newR;
+  char *outputFile;
+=======
+void update_LR(double ***L, double ***R, double ***newL, double ***newR);
 void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B);
 
 /****************************************************************/
 
 int main(int argc, char *argv[]){
     FILE *fp;
-    int nIter, nFeat, nUser, nItem, nZero, nEntry, B_item, intAux;
+    int nIter, nFeat, nUser, nItem, nEntry, B_item;
     int *solution;
     double deriv = 0;
     double alpha, sol_aux;
@@ -59,206 +80,285 @@ int main(int argc, char *argv[]){
     fscanf(fp, "%lf", &alpha);
     fscanf(fp, "%d", &nFeat);
     fscanf(fp, "%d %d %d", &nUser, &nItem, &nEntry);
+>>>>>>> ad64a659b30b7ebf175e65177cdbe35eafe4c655
 
-    alloc_A(nUser, nItem, &A_user, &A_item, &A_user_aux, &A_item_aux);
+  entryA **A_user, **A_user_aux, **A_item, **A_item_aux;
+  entryA *A_aux1, *A_aux2;
 
-    solution = (int*)malloc(sizeof(int)*nUser);
+  if (argc != 2) {
+    printf("error: command of type ./matFact <filename.in>\n");
+    exit(1);
+  }
 
-    //Fill A
-    for(int i = 0; i < nEntry; i++){
-        
-        A_aux1 = createNode();
-        
-        fscanf(fp, "%d %d %lf", &(A_aux1->user), &(A_aux1->item), &(A_aux1->rate));
+  fp = fopen(argv[1], "r");
+  if (fp == NULL) {
+    printf("error: cannot open file\n");
+    exit(1);
+  }
 
-        if(A_user[A_aux1->user] == NULL){
+  /******************************Setup******************************/
+  // Functional Parallelism
+  fscanf(fp, "%d", &nIter);
+  fscanf(fp, "%lf", &alpha);
+  fscanf(fp, "%d", &nFeat);
+  fscanf(fp, "%d %d %d", &nUser, &nItem, &nEntry);
 
-            A_user[A_aux1->user] = A_aux1;
-            A_user_aux[A_aux1->user] = A_aux1;
+  alloc_A(nUser, nItem, &A_user, &A_item, &A_user_aux, &A_item_aux);
 
-        }else{
+  solution = (int *)malloc(sizeof(int) * nUser);
 
-            A_user_aux[A_aux1->user]->nextItem = A_aux1;
-            A_user_aux[A_aux1->user] = A_aux1;
-        }
+  // Fill A
+  for (int i = 0; i < nEntry; i++) {
 
+    A_aux1 = createNode();
 
+    fscanf(fp, "%d %d %lf", &(A_aux1->user), &(A_aux1->item), &(A_aux1->rate));
 
-        if(A_item[A_aux1->item] == NULL){
+    if (A_user[A_aux1->user] == NULL) {
 
-            A_item[A_aux1->item] = A_aux1;
-            A_item_aux[A_aux1->item] = A_aux1;
+      A_user[A_aux1->user] = A_aux1;
+      A_user_aux[A_aux1->user] = A_aux1;
 
-        }else{
+    } else {
 
-            A_item_aux[A_aux1->item]->nextUser = A_aux1;
-            A_item_aux[A_aux1->item] = A_aux1;
-        }
+      A_user_aux[A_aux1->user]->nextItem = A_aux1;
+      A_user_aux[A_aux1->user] = A_aux1;
     }
 
-    fclose(fp);
-    free(A_item_aux);
-    free(A_user_aux);
+    if (A_item[A_aux1->item] == NULL) {
 
+<<<<<<< HEAD
+      A_item[A_aux1->item] = A_aux1;
+      A_item_aux[A_aux1->item] = A_aux1;
+=======
     alloc_LRB(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
     random_fill_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
-    multiply_LR(nUser, nItem, nFeat, &L, &R, &B);    
+    multiply_LR(nUser, nItem, nFeat, &L, &R, &B);
+>>>>>>> ad64a659b30b7ebf175e65177cdbe35eafe4c655
 
-    /****************************End Setup****************************/
+    } else {
 
-    /***********************Matrix Factorization**********************/
-    for(int n = 0; n < nIter; n++){
-
-        
-        //Matrix L
-        for(int i = 0; i < nUser; i++){
-            for(int k = 0; k < nFeat; k++){
-
-                A_aux1 = A_user[i];
-                while(A_aux1 != NULL){
-                    deriv += 2*(A_aux1->rate - B[i][A_aux1->item])*(-R[k][A_aux1->item]);
-                    A_aux1 = A_aux1->nextItem;
-                }
-
-                newL[i][k] = L[i][k]-alpha*deriv;
-                deriv = 0;
-            }
-        }
-
-        //Matrix R
-        for(int k = 0; k < nFeat; k++){
-            for(int j = 0; j < nItem; j++){
-
-                A_aux1 = A_item[j];
-                while(A_aux1 != NULL){
-                    deriv += 2*(A_aux1->rate - B[A_aux1->user][j])*(-L[A_aux1->user][k]);
-                    A_aux1 = A_aux1->nextUser;
-                }
-
-                newR[k][j] = R[k][j]-alpha*deriv;
-                deriv = 0;
-            }
-        }
-  
-        update_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);   
-        multiply_LR(nUser, nItem, nFeat, &L, &R, &B);   
+      A_item_aux[A_aux1->item]->nextUser = A_aux1;
+      A_item_aux[A_aux1->item] = A_aux1;
     }
-    /*********************End Matrix Factorization********************/  
+  }
 
-    for(int k = 0; k < nUser; k++){
-        B_item=0;
-        sol_aux=0;
-        A_aux1 = A_user[k];
+  fclose(fp);
+  free(A_item_aux);
+  free(A_user_aux);
 
-        while(A_aux1 != NULL){
-            while(B_item != A_aux1->item){
+  alloc_LRB(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
+  random_fill_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
+  multiply_LR(nUser, nItem, nFeat, &L, &R, &B);
 
-                if(B[k][B_item] > sol_aux){
-                    solution[k]=B_item;
-                    sol_aux = B[k][B_item];
-                }
+  /****************************End Setup****************************/
 
-                B_item++;
-            }
+  /***********************Matrix Factorization**********************/
+  for (int n = 0; n < nIter; n++) {
 
-            B_item++;
-            A_aux1 = A_aux1->nextItem;
-        }
-
-        while(B_item < nItem){
-            if(B[k][B_item] > sol_aux){
-                solution[k]=B_item;
-                sol_aux = B[k][B_item];
-            }
-
-            B_item++;  
-        }
-    }
-
-    /****************************Write File***************************/
-    outputFile = strtok(argv[1], ".");
-    strcat(outputFile, ".out\0");
-
-    fp = fopen(outputFile, "w");
-    if(fp == NULL){
-        printf("error: cannot open file\n");
-		exit(1);
-    }
-
-    for(int i=0; i<nUser; i++){
-        fprintf(fp, "%d\n", solution[i]);
-    }
-
-    fclose(fp);
-    /*****************************************************************/
-
-    /******************************Free A*****************************/
-    for(int i = 0; i < nUser; i++){
+    // Matrix L
+#pragma omp parallel default(none) shared(nUser, nItem, nFeat, A_user, A_item, B, R, L, newR, newL, alpha, deriv, A_aux1)
+    {
+#pragma omp for firstprivate(A_aux1, deriv) nowait schedule(dynamic)
+    for (int i = 0; i < nUser; i++) {
+      for (int k = 0; k < nFeat; k++) {
 
         A_aux1 = A_user[i];
-
-        while(A_aux1 != NULL){
-            A_aux2 = A_aux1->nextItem;
-            free(A_aux1);
-            A_aux1 = A_aux2;
+        while (A_aux1 != NULL) {
+          deriv +=
+              2 * (A_aux1->rate - B[i][A_aux1->item]) * (-R[k][A_aux1->item]);
+          A_aux1 = A_aux1->nextItem;
         }
-        
+<<<<<<< HEAD
+=======
+  
+        update_LR(&L, &R, &newL, &newR);
+        multiply_LR(nUser, nItem, nFeat, &L, &R, &B);
     }
-    free(A_user);
-    free(A_item);
-    /*****************************************************************/
-    
-    free(solution);
-    free_LR(nUser, nFeat, &L, &R, &newL, &newR, &B);
+    /*********************End Matrix Factorization********************/  
+>>>>>>> ad64a659b30b7ebf175e65177cdbe35eafe4c655
 
-    return 0;
+        newL[i][k] = L[i][k] - alpha * deriv;
+        deriv = 0;
+      }
+    }
+
+    // Matrix R
+#pragma omp for firstprivate(A_aux1, deriv) nowait schedule(dynamic)
+    for (int k = 0; k < nFeat; k++) {
+      for (int j = 0; j < nItem; j++) {
+
+        A_aux1 = A_item[j];
+        while (A_aux1 != NULL) {
+          deriv +=
+              2 * (A_aux1->rate - B[A_aux1->user][j]) * (-L[A_aux1->user][k]);
+          A_aux1 = A_aux1->nextUser;
+        }
+
+        newR[k][j] = R[k][j] - alpha * deriv;
+        deriv = 0;
+      }
+    }
+  }
+    update_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
+    multiply_LR(nUser, nItem, nFeat, &L, &R, &B);
+  }
+  /*********************End Matrix Factorization********************/
+
+  for (int k = 0; k < nUser; k++) {
+    B_item = 0;
+    sol_aux = 0;
+    A_aux1 = A_user[k];
+
+    while (A_aux1 != NULL) {
+      while (B_item != A_aux1->item) {
+
+        if (B[k][B_item] > sol_aux) {
+          solution[k] = B_item;
+          sol_aux = B[k][B_item];
+        }
+
+        B_item++;
+      }
+
+<<<<<<< HEAD
+      B_item++;
+      A_aux1 = A_aux1->nextItem;
+=======
+            B_item++;
+        }
+>>>>>>> ad64a659b30b7ebf175e65177cdbe35eafe4c655
+    }
+
+    while (B_item < nItem) {
+      if (B[k][B_item] > sol_aux) {
+        solution[k] = B_item;
+        sol_aux = B[k][B_item];
+      }
+
+      B_item++;
+    }
+  }
+
+  /****************************Write File***************************/
+  outputFile = strtok(argv[1], ".");
+  strcat(outputFile, ".out\0");
+
+  fp = fopen(outputFile, "w");
+  if (fp == NULL) {
+    printf("error: cannot open file\n");
+    exit(1);
+  }
+
+  for (int i = 0; i < nUser; i++) {
+    fprintf(fp, "%d\n", solution[i]);
+  }
+
+  fclose(fp);
+  /*****************************************************************/
+
+  /******************************Free A*****************************/
+  for (int i = 0; i < nUser; i++) {
+
+    A_aux1 = A_user[i];
+
+    while (A_aux1 != NULL) {
+      A_aux2 = A_aux1->nextItem;
+      free(A_aux1);
+      A_aux1 = A_aux2;
+    }
+  }
+  free(A_user);
+  free(A_item);
+  /*****************************************************************/
+
+  free(solution);
+  free_LR(nUser, nFeat, &L, &R, &newL, &newR, &B);
+
+  return 0;
 }
 
-void alloc_A(int nU, int nI, entryA ***_A_user, entryA ***_A_item, entryA ***_A_user_aux, entryA ***_A_item_aux){
+void alloc_A(int nU, int nI, entryA ***_A_user, entryA ***_A_item,
+             entryA ***_A_user_aux, entryA ***_A_item_aux) {
 
-    *_A_user = (entryA**)calloc(sizeof(entryA*), nU);
-    *_A_item = (entryA**)calloc(sizeof(entryA*), nI);
+  *_A_user = (entryA **)calloc(sizeof(entryA *), nU);
+  *_A_item = (entryA **)calloc(sizeof(entryA *), nI);
 
-    *_A_user_aux = (entryA**)calloc(sizeof(entryA*), nU);
-    *_A_item_aux = (entryA**)calloc(sizeof(entryA*), nI);
+  *_A_user_aux = (entryA **)calloc(sizeof(entryA *), nU);
+  *_A_item_aux = (entryA **)calloc(sizeof(entryA *), nI);
 }
 
-entryA* createNode(){
+entryA *createNode() {
 
+<<<<<<< HEAD
+  entryA *A;
+  A = (entryA *)malloc(sizeof(entryA));
+  A->nextItem = NULL;
+  A->nextUser = NULL;
+=======
     entryA *A;
     A = (entryA*)malloc(sizeof(entryA));
     A->nextItem = NULL;
-    A->
-    nextUser = NULL;
+    A->nextUser = NULL;
+>>>>>>> ad64a659b30b7ebf175e65177cdbe35eafe4c655
 
-    return A;
+  return A;
 }
 
+void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
+               double ***newR, double ***B) {
 
-void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B){
+  // Functional Parallelism
+  *B = (double **)malloc(sizeof(double *) * nU);
+  *L = (double **)malloc(sizeof(double *) * nU);
+  *newL = (double **)malloc(sizeof(double *) * nU);
+  *R = (double **)malloc(sizeof(double *) * nF);
+  *newR = (double **)malloc(sizeof(double *) * nF);
 
-    //Functional Parallelism
-    *B = (double**)malloc(sizeof(double*)*nU);
-    *L = (double**)malloc(sizeof(double*)*nU);
-    *newL = (double**)malloc(sizeof(double*)*nU);
-    *R = (double**)malloc(sizeof(double*)*nF);
-    *newR = (double**)malloc(sizeof(double*)*nF);
+  // Data Parallelism
+  #pragma omp parallel for
+  for (int i = 0; i < nU; i++) {
+    (*B)[i] = (double *)malloc(sizeof(double) * nI);
+    (*L)[i] = (double *)malloc(sizeof(double) * nF);
+    (*newL)[i] = (double *)malloc(sizeof(double) * nF);
+  }
 
-    //Data Parallelism
-	for (int i = 0; i < nU; i++){
-        (*B)[i] = (double*)malloc(sizeof(double)*nI);
-        (*L)[i] = (double *)malloc(sizeof(double) *nF);
-        (*newL)[i] = (double *)malloc(sizeof(double)*nF);
+  // Data Parallelism
+  #pragma omp parallel for
+  for (int i = 0; i < nF; i++) {
+    (*R)[i] = (double *)malloc(sizeof(double) * nI);
+    (*newR)[i] = (double *)malloc(sizeof(double) * nI);
+  }
+}
+
+void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R,
+                    double ***newL, double ***newR) {
+  srandom(0);
+
+  // Data Parallelism
+  for (int i = 0; i < nU; i++)
+    for (int j = 0; j < nF; j++) {
+      (*L)[i][j] = RAND01 / (double)nF;
+      (*newL)[i][j] = (*L)[i][j];
     }
 
-    //Data Parallelism
-    for (int i = 0; i < nF; i++){
-	    (*R)[i] = (double *)malloc(sizeof(double)*nI);
-        (*newR)[i] = (double *)malloc(sizeof(double)*nI);
-    }	
+  // Data Parallelism
+  for (int i = 0; i < nF; i++)
+    for (int j = 0; j < nI; j++) {
+      (*R)[i][j] = RAND01 / (double)nF;
+      (*newR)[i][j] = (*R)[i][j];
+    }
 }
 
+void multiply_LR(int nU, int nI, int nF, double ***L, double ***R,
+                 double ***B) {
 
+<<<<<<< HEAD
+  #pragma omp parallel for
+  for (int i = 0; i < nU; i++)
+    for (int j = 0; j < nI; j++)
+      (*B)[i][j] = 0;
+=======
 void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR)
 {
     srandom(0);
@@ -267,7 +367,7 @@ void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***
     for(int i = 0; i < nU; i++)
         for(int j = 0; j < nF; j++){
             (*L)[i][j] = RAND01 / (double) nF;
-            (*newL)[i][j] = (*L)[i][j]; 
+            (*newL)[i][j] = (*L)[i][j];
         }
     
     //Data Parallelism
@@ -278,50 +378,56 @@ void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R, double ***
         }
 }   
 
+>>>>>>> ad64a659b30b7ebf175e65177cdbe35eafe4c655
 
-void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B){
-    
-    for(int i = 0; i < nU; i++)
-        for(int j = 0; j < nI; j++)
-            (*B)[i][j] = 0;
-
-    //Data Parallelism
-    for(int i = 0; i < nU; i++)
-        for(int j = 0; j < nI; j++)
-            for(int k = 0; k < nF; k++)
-                (*B)[i][j] += (*L)[i][k]*(*R)[k][j];
+  // Data Parallelism
+  #pragma omp parallel for
+  for (int i = 0; i < nU; i++)
+    for (int j = 0; j < nI; j++)
+      for (int k = 0; k < nF; k++)
+        (*B)[i][j] += (*L)[i][k] * (*R)[k][j];
 }
 
+void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
+               double ***newR) {
 
-void update_LR(int nU, int nI, int nF, double ***L, double ***R, double ***newL, double ***newR){
+<<<<<<< HEAD
+  double **aux;
+  aux = *L;
+  *L = *newL;
+  *newL = aux;
+=======
+void update_LR(double ***L, double ***R, double ***newL, double ***newR){
 
     double **aux;
     aux = *L;
     *L = *newL;
     *newL = aux;
+>>>>>>> ad64a659b30b7ebf175e65177cdbe35eafe4c655
 
-    aux = *R;
-    *R = *newR;
-    *newR = aux;
+  aux = *R;
+  *R = *newR;
+  *newR = aux;
 }
 
-void free_LR(int nU, int nF, double ***L, double ***R, double ***newL, double ***newR, double ***B){
+void free_LR(int nU, int nF, double ***L, double ***R, double ***newL,
+             double ***newR, double ***B) {
 
-    //Data Parallelism
-	for(int i=0; i<nU; i++){
-        free((*B)[i]);
-        free((*L)[i]);
-        free((*newL)[i]);
-    } 
-	free(*B);
-	free(*L);
-	free(*newL);
+  #pragma omp parallel for
+  for (int i = 0; i < nU; i++) {
+    free((*B)[i]);
+    free((*L)[i]);
+    free((*newL)[i]);
+  }
+  free(*B);
+  free(*L);
+  free(*newL);
 
-    //Data Parallelism
-    for(int i=0; i<nF; i++){
-        free((*R)[i]);
-        free((*newR)[i]);
-    } 
-	free(*newR);
-	free(*R);
+  #pragma omp parallel for
+  for (int i = 0; i < nF; i++) {
+    free((*R)[i]);
+    free((*newR)[i]);
+  }
+  free(*newR);
+  free(*R);
 }
