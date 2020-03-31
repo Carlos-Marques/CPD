@@ -212,15 +212,8 @@ int main(int argc, char *argv[]) {
 void alloc_A(int nU, int nI, entryA ***_A_user, entryA ***_A_item,
              entryA ***_A_user_aux, entryA ***_A_item_aux) {
 
-<<<<<<< HEAD
   *_A_user = (entryA **)calloc(sizeof(entryA *), nU);
   *_A_item = (entryA **)calloc(sizeof(entryA *), nI);
-=======
-    entryA *A;
-    A = (entryA*)malloc(sizeof(entryA));
-    A->nextItem = NULL;
-    A->nextUser = NULL;
->>>>>>> ad64a659b30b7ebf175e65177cdbe35eafe4c655
 
   *_A_user_aux = (entryA **)calloc(sizeof(entryA *), nU);
   *_A_item_aux = (entryA **)calloc(sizeof(entryA *), nI);
