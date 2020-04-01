@@ -1,3 +1,10 @@
+#ifdef _POMP
+#  undef _POMP
+#endif
+#define _POMP 200110
+
+#include "matFact.c.opari.inc"
+#line 1 "matFact.c"
 /**************************Declarations**************************/
 
 #include <fcntl.h>
@@ -7,7 +14,6 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <omp.h>
 
 #define RAND01 ((double)random() / (double)RAND_MAX)
 
@@ -107,59 +113,82 @@ int main(int argc, char *argv[]) {
   /****************************End Setup****************************/
 
   /***********************Matrix Factorization**********************/
+  int k = 0, i = 0, j = 0;
   
   for (int n = 0; n < nIter; n++) {
     // Matrix L
-    #pragma omp parallel default(none) shared(nUser, nItem, nFeat, A_user, A_item, R, L, B,newR, newL, alpha, deriv, A_aux1)
-    {
-      #pragma omp for firstprivate(A_aux1, deriv) nowait schedule(dynamic)
-      for (int i = 0; i < nUser; i++) {
-        for (int k = 0; k < nFeat; k++) {
+    k = 0; i = 0; j = 0;
 
-          A_aux1 = A_user[i];
-          while (A_aux1 != NULL) {
-            deriv +=
-                2 * (A_aux1->rate - B[i][A_aux1->item]) * (-R[k][A_aux1->item]);
-            A_aux1 = A_aux1->nextItem;
-          }
+    //#pragma omp parallel for private(k,A_aux1)
+    for (i = 0; i < nUser; i++) {
+      for (k = 0; k < nFeat; k++) {
 
-          newL[i][k] = L[i][k] - alpha * deriv;
-          deriv = 0;
+        A_aux1 = A_user[i];
+        while (A_aux1 != NULL) {
+          deriv +=
+              2 * (A_aux1->rate - B[i][A_aux1->item]) * (-R[k][A_aux1->item]);
+          A_aux1 = A_aux1->nextItem;
         }
-      }
 
-      // Matrix R
-      #pragma omp for firstprivate(A_aux1, deriv) nowait schedule(dynamic)
-      for (int j = 0; j < nItem; j++) {
-        for (int k = 0; k < nFeat; k++) {
-
-          A_aux1 = A_item[j];
-          while (A_aux1 != NULL) {
-            deriv +=
-                2 * (A_aux1->rate - B[A_aux1->user][j]) * (-L[A_aux1->user][k]);
-            A_aux1 = A_aux1->nextUser;
-          }
-
-          newR[k][j] = R[k][j] - alpha * deriv;
-          deriv = 0;
-        }
+        newL[i][k] = L[i][k] - alpha * deriv;
+        deriv = 0;
       }
     }
+
+    k = 0; i = 0; j = 0;
+    // Matrix R
+    //#pragma omp parallel for private(k,A_aux1)
+    for (j = 0; j < nItem; j++) {
+      for (k = 0; k < nFeat; k++) {
+
+        A_aux1 = A_item[j];
+        while (A_aux1 != NULL) {
+          deriv +=
+              2 * (A_aux1->rate - B[A_aux1->user][j]) * (-L[A_aux1->user][k]);
+          A_aux1 = A_aux1->nextUser;
+        }
+
+        newR[k][j] = R[k][j] - alpha * deriv;
+        deriv = 0;
+      }
+    }
+
     update_LR(&L, &R, &newL, &newR);
     multiply_LR(nUser, nItem, nFeat, &L, &R, &B, A_user);
   }
   /*********************End Matrix Factorization********************/
   
-  #pragma omp parallel for
-  for (int i = 0; i < nUser; i++)
-    for (int j = 0; j < nItem; j++) {
+  k = 0; i = 0; j = 0;
+
+POMP_Parallel_fork(&omp_rd_22);
+#line 157 "matFact.c"
+  #pragma omp parallel     private(j,k)
+{ POMP_Parallel_begin(&omp_rd_22);
+POMP_For_enter(&omp_rd_22);
+#line 157 "matFact.c"
+  #pragma omp          for              nowait
+  for (i = 0; i < nUser; i++)
+    for (j = 0; j < nItem; j++) {
       B[i][j] = 0;
-      for (int k = 0; k < nFeat; k++)
+      for (k = 0; k < nFeat; k++)
         B[i][j] += L[i][k] * R[k][j];
     }
+POMP_Barrier_enter(&omp_rd_22);
+#pragma omp barrier
+POMP_Barrier_exit(&omp_rd_22);
+POMP_For_exit(&omp_rd_22);
+POMP_Parallel_end(&omp_rd_22); }
+POMP_Parallel_join(&omp_rd_22);
+#line 164 "matFact.c"
   
-  #pragma omp parallel for private(A_aux1)
-  for (int k = 0; k < nUser; k++) {
+POMP_Parallel_fork(&omp_rd_23);
+#line 165 "matFact.c"
+  #pragma omp parallel     private(A_aux1)
+{ POMP_Parallel_begin(&omp_rd_23);
+POMP_For_enter(&omp_rd_23);
+#line 165 "matFact.c"
+  #pragma omp          for                 nowait
+  for (k = 0; k < nUser; k++) {
     B_item = 0;
     sol_aux = 0;
     A_aux1 = A_user[k];
@@ -178,6 +207,13 @@ int main(int argc, char *argv[]) {
       B_item++;
     }
   }
+POMP_Barrier_enter(&omp_rd_23);
+#pragma omp barrier
+POMP_Barrier_exit(&omp_rd_23);
+POMP_For_exit(&omp_rd_23);
+POMP_Parallel_end(&omp_rd_23); }
+POMP_Parallel_join(&omp_rd_23);
+#line 185 "matFact.c"
 
   /****************************Write File***************************/
   outputFile = strtok(argv[1], ".");
@@ -261,31 +297,70 @@ void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
 
   i = 0;
   // Data Parallelism
-  //#pragma omp parallel for private(j)
+POMP_Parallel_fork(&omp_rd_24);
+#line 268 "matFact.c"
+  #pragma omp parallel     private(j)
+{ POMP_Parallel_begin(&omp_rd_24);
+POMP_For_enter(&omp_rd_24);
+#line 268 "matFact.c"
+  #pragma omp          for            nowait
   for (i = 0; i < nU; i++){
     for (j = 0; j < nF; j++) {
       (*L)[i][j] = RAND01 / (double)nF;
       (*newL)[i][j] = (*L)[i][j];
     }
   }
+POMP_Barrier_enter(&omp_rd_24);
+#pragma omp barrier
+POMP_Barrier_exit(&omp_rd_24);
+POMP_For_exit(&omp_rd_24);
+POMP_Parallel_end(&omp_rd_24); }
+POMP_Parallel_join(&omp_rd_24);
+#line 275 "matFact.c"
     
   i = 0;
   // Data Parallelism
-  //#pragma omp parallel for
+POMP_Parallel_fork(&omp_rd_25);
+#line 278 "matFact.c"
+  #pragma omp parallel    
+{ POMP_Parallel_begin(&omp_rd_25);
+POMP_For_enter(&omp_rd_25);
+#line 278 "matFact.c"
+  #pragma omp          for nowait
   for (i = 0; i < nF; i++) {
     (*R)[i] = (double *)malloc(sizeof(double) * nI);
     (*newR)[i] = (double *)malloc(sizeof(double) * nI);
   }
+POMP_Barrier_enter(&omp_rd_25);
+#pragma omp barrier
+POMP_Barrier_exit(&omp_rd_25);
+POMP_For_exit(&omp_rd_25);
+POMP_Parallel_end(&omp_rd_25); }
+POMP_Parallel_join(&omp_rd_25);
+#line 283 "matFact.c"
 
   j = 0; i = 0;
   // Data Parallelism
-  //#pragma omp parallel for private(j)
+POMP_Parallel_fork(&omp_rd_26);
+#line 286 "matFact.c"
+  #pragma omp parallel     private(j)
+{ POMP_Parallel_begin(&omp_rd_26);
+POMP_For_enter(&omp_rd_26);
+#line 286 "matFact.c"
+  #pragma omp          for            nowait
   for (int i = 0; i < nF; i++){
     for (j = 0; j < nI; j++) {
       (*R)[i][j] = RAND01 / (double)nF;
       (*newR)[i][j] = (*R)[i][j];
     }
   }
+POMP_Barrier_enter(&omp_rd_26);
+#pragma omp barrier
+POMP_Barrier_exit(&omp_rd_26);
+POMP_For_exit(&omp_rd_26);
+POMP_Parallel_end(&omp_rd_26); }
+POMP_Parallel_join(&omp_rd_26);
+#line 293 "matFact.c"
 //}  
 }
 
@@ -294,7 +369,13 @@ void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B,
   entryA *A_aux1;
   double result = 0;
 
-  #pragma omp parallel for private(A_aux1) schedule(dynamic)
+POMP_Parallel_fork(&omp_rd_27);
+#line 301 "matFact.c"
+  #pragma omp parallel     private(A_aux1)                  
+{ POMP_Parallel_begin(&omp_rd_27);
+POMP_For_enter(&omp_rd_27);
+#line 301 "matFact.c"
+  #pragma omp          for                 schedule(dynamic) nowait
   for (int i = 0; i < nU; i++) {
     A_aux1 = A_user[i];
     while (A_aux1 != NULL) {
@@ -309,6 +390,13 @@ void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B,
       A_aux1 = A_aux1->nextItem;
     }
   }
+POMP_Barrier_enter(&omp_rd_27);
+#pragma omp barrier
+POMP_Barrier_exit(&omp_rd_27);
+POMP_For_exit(&omp_rd_27);
+POMP_Parallel_end(&omp_rd_27); }
+POMP_Parallel_join(&omp_rd_27);
+#line 316 "matFact.c"
 }
 
 void update_LR(double ***L, double ***R, double ***newL, double ***newR) {

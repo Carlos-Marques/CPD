@@ -1,3 +1,10 @@
+#ifdef _POMP
+#  undef _POMP
+#endif
+#define _POMP 200110
+
+#include "matFact.c.opari.inc"
+#line 1 "matFact.c"
 /**************************Declarations**************************/
 
 #include <fcntl.h>
@@ -7,7 +14,6 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <omp.h>
 
 #define RAND01 ((double)random() / (double)RAND_MAX)
 
@@ -45,7 +51,6 @@ int main(int argc, char *argv[]) {
 
   entryA **A_user, **A_user_aux, **A_item, **A_item_aux;
   entryA *A_aux1, *A_aux2;
-  
 
   if (argc != 2) {
     printf("error: command of type ./matFact <filename.in>\n");
@@ -107,58 +112,50 @@ int main(int argc, char *argv[]) {
   /****************************End Setup****************************/
 
   /***********************Matrix Factorization**********************/
-  
   for (int n = 0; n < nIter; n++) {
     // Matrix L
-    #pragma omp parallel default(none) shared(nUser, nItem, nFeat, A_user, A_item, R, L, B,newR, newL, alpha, deriv, A_aux1)
-    {
-      #pragma omp for firstprivate(A_aux1, deriv) nowait schedule(dynamic)
-      for (int i = 0; i < nUser; i++) {
-        for (int k = 0; k < nFeat; k++) {
+    for (int i = 0; i < nUser; i++) {
+      for (int k = 0; k < nFeat; k++) {
 
-          A_aux1 = A_user[i];
-          while (A_aux1 != NULL) {
-            deriv +=
-                2 * (A_aux1->rate - B[i][A_aux1->item]) * (-R[k][A_aux1->item]);
-            A_aux1 = A_aux1->nextItem;
-          }
-
-          newL[i][k] = L[i][k] - alpha * deriv;
-          deriv = 0;
+        A_aux1 = A_user[i];
+        while (A_aux1 != NULL) {
+          deriv +=
+              2 * (A_aux1->rate - B[i][A_aux1->item]) * (-R[k][A_aux1->item]);
+          A_aux1 = A_aux1->nextItem;
         }
-      }
 
-      // Matrix R
-      #pragma omp for firstprivate(A_aux1, deriv) nowait schedule(dynamic)
-      for (int j = 0; j < nItem; j++) {
-        for (int k = 0; k < nFeat; k++) {
-
-          A_aux1 = A_item[j];
-          while (A_aux1 != NULL) {
-            deriv +=
-                2 * (A_aux1->rate - B[A_aux1->user][j]) * (-L[A_aux1->user][k]);
-            A_aux1 = A_aux1->nextUser;
-          }
-
-          newR[k][j] = R[k][j] - alpha * deriv;
-          deriv = 0;
-        }
+        newL[i][k] = L[i][k] - alpha * deriv;
+        deriv = 0;
       }
     }
+
+    // Matrix R
+    for (int j = 0; j < nItem; j++) {
+      for (int k = 0; k < nFeat; k++) {
+
+        A_aux1 = A_item[j];
+        while (A_aux1 != NULL) {
+          deriv +=
+              2 * (A_aux1->rate - B[A_aux1->user][j]) * (-L[A_aux1->user][k]);
+          A_aux1 = A_aux1->nextUser;
+        }
+
+        newR[k][j] = R[k][j] - alpha * deriv;
+        deriv = 0;
+      }
+    }
+
     update_LR(&L, &R, &newL, &newR);
     multiply_LR(nUser, nItem, nFeat, &L, &R, &B, A_user);
   }
   /*********************End Matrix Factorization********************/
-  
-  #pragma omp parallel for
   for (int i = 0; i < nUser; i++)
     for (int j = 0; j < nItem; j++) {
       B[i][j] = 0;
       for (int k = 0; k < nFeat; k++)
         B[i][j] += L[i][k] * R[k][j];
     }
-  
-  #pragma omp parallel for private(A_aux1)
+
   for (int k = 0; k < nUser; k++) {
     B_item = 0;
     sol_aux = 0;
@@ -240,8 +237,7 @@ void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
                double ***newR, double ***B) {
 
   srandom(0);
-  int i = 0, j = 0;
-  
+
   // Functional Parallelism
   *B = (double **)malloc(sizeof(double *) * nU);
   *L = (double **)malloc(sizeof(double *) * nU);
@@ -249,63 +245,44 @@ void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
   *R = (double **)malloc(sizeof(double *) * nF);
   *newR = (double **)malloc(sizeof(double *) * nF);
 
-  //#pragma omp parallel
-  //{
   // Data Parallelism
-  //#pragma omp parallel for 
-  for (i = 0; i < nU; i++) {
+  for (int i = 0; i < nU; i++) {
     (*B)[i] = (double *)malloc(sizeof(double) * nI);
     (*L)[i] = (double *)malloc(sizeof(double) * nF);
     (*newL)[i] = (double *)malloc(sizeof(double) * nF);
   }
 
-  i = 0;
   // Data Parallelism
-  //#pragma omp parallel for private(j)
-  for (i = 0; i < nU; i++){
-    for (j = 0; j < nF; j++) {
+  for (int i = 0; i < nU; i++)
+    for (int j = 0; j < nF; j++) {
       (*L)[i][j] = RAND01 / (double)nF;
       (*newL)[i][j] = (*L)[i][j];
     }
-  }
-    
-  i = 0;
+
   // Data Parallelism
-  //#pragma omp parallel for
-  for (i = 0; i < nF; i++) {
+  for (int i = 0; i < nF; i++) {
     (*R)[i] = (double *)malloc(sizeof(double) * nI);
     (*newR)[i] = (double *)malloc(sizeof(double) * nI);
   }
 
-  j = 0; i = 0;
   // Data Parallelism
-  //#pragma omp parallel for private(j)
-  for (int i = 0; i < nF; i++){
-    for (j = 0; j < nI; j++) {
+  for (int i = 0; i < nF; i++)
+    for (int j = 0; j < nI; j++) {
       (*R)[i][j] = RAND01 / (double)nF;
       (*newR)[i][j] = (*R)[i][j];
     }
-  }
-//}  
 }
 
 void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B,
                  entryA **A_user) {
   entryA *A_aux1;
-  double result = 0;
 
-  #pragma omp parallel for private(A_aux1) schedule(dynamic)
   for (int i = 0; i < nU; i++) {
     A_aux1 = A_user[i];
     while (A_aux1 != NULL) {
       (*B)[i][A_aux1->item] = 0;
-      result = 0;
-
-      //#pragma omp parallel for reduction(+:result)
       for (int k = 0; k < nF; k++)
-        result = result + ( (*L)[i][k] * (*R)[k][A_aux1->item] );
-
-      (*B)[i][A_aux1->item] = result;
+        (*B)[i][A_aux1->item] += (*L)[i][k] * (*R)[k][A_aux1->item];
       A_aux1 = A_aux1->nextItem;
     }
   }
