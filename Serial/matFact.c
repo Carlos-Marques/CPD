@@ -14,6 +14,7 @@ typedef struct entryA {
   int user;
   int item;
   double rate;
+  double recom;
   struct entryA *nextItem;
   struct entryA *nextUser;
 } entryA;
@@ -27,8 +28,8 @@ void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
                double ***newR, double ***B);
 void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R,
                     double ***newL, double ***newR);
-void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B,
-                 entryA **A_user);
+void multiply_LR(int nU, int nF, double ***L, double ***R,
+                 entryA ***A_user);
 void update_LR(double ***L, double ***R, double ***newL, double ***newR);
 void free_LR(int nU, int nF, double ***L, double ***R, double ***newL,
              double ***newR, double ***B);
@@ -103,7 +104,7 @@ int main(int argc, char *argv[]) {
 
   alloc_LRB(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
   random_fill_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
-  multiply_LR(nUser, nItem, nFeat, &L, &R, &B, A_user);
+  multiply_LR(nUser, nFeat, &L, &R, &A_user);
 
   /****************************End Setup****************************/
 
@@ -116,7 +117,7 @@ int main(int argc, char *argv[]) {
         A_aux1 = A_user[i];
         while (A_aux1 != NULL) {
           deriv +=
-              2 * (A_aux1->rate - B[i][A_aux1->item]) * (-R[k][A_aux1->item]);
+              2 * (A_aux1->rate - A_aux1->recom) * (-R[k][A_aux1->item]);
           A_aux1 = A_aux1->nextItem;
         }
 
@@ -132,7 +133,7 @@ int main(int argc, char *argv[]) {
         A_aux1 = A_item[j];
         while (A_aux1 != NULL) {
           deriv +=
-              2 * (A_aux1->rate - B[A_aux1->user][j]) * (-L[A_aux1->user][k]);
+              2 * (A_aux1->rate - A_aux1->recom) * (-L[A_aux1->user][k]);
           A_aux1 = A_aux1->nextUser;
         }
 
@@ -142,7 +143,7 @@ int main(int argc, char *argv[]) {
     }
 
     update_LR(&L, &R, &newL, &newR);
-    multiply_LR(nUser, nItem, nFeat, &L, &R, &B, A_user);
+    multiply_LR(nUser, nFeat, &L, &R, &A_user);
   }
   /*********************End Matrix Factorization********************/
   for (int i = 0; i < nUser; i++)
@@ -270,16 +271,16 @@ void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R,
     }
 }
 
-void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B,
-                 entryA **A_user) {
+void multiply_LR(int nU, int nF, double ***L, double ***R,
+                 entryA ***A_user) {
   entryA *A_aux1;
 
   for (int i = 0; i < nU; i++) {
-    A_aux1 = A_user[i];
+    A_aux1 = (*A_user)[i];
     while (A_aux1 != NULL) {
-      (*B)[i][A_aux1->item] = 0;
+      A_aux1->recom = 0;
       for (int k = 0; k < nF; k++)
-        (*B)[i][A_aux1->item] += (*L)[i][k] * (*R)[k][A_aux1->item];
+        A_aux1->recom += (*L)[i][k] * (*R)[k][A_aux1->item];
       A_aux1 = A_aux1->nextItem;
     }
   }
