@@ -25,8 +25,6 @@ entryA *createNode();
 
 void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
                double ***newR, double ***B);
-void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R,
-                    double ***newL, double ***newR);
 void multiply_LR(int nU, int nI, int nF, double ***L, double ***R, double ***B,
                  entryA **A_user);
 void update_LR(double ***L, double ***R, double ***newL, double ***newR);
@@ -102,7 +100,6 @@ int main(int argc, char *argv[]) {
   free(A_user_aux);
 
   alloc_LRB(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
-  random_fill_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
   multiply_LR(nUser, nItem, nFeat, &L, &R, &B, A_user);
 
   /****************************End Setup****************************/
@@ -232,6 +229,8 @@ entryA *createNode() {
 void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
                double ***newR, double ***B) {
 
+  srandom(0);
+
   // Functional Parallelism
   *B = (double **)malloc(sizeof(double *) * nU);
   *L = (double **)malloc(sizeof(double *) * nU);
@@ -247,21 +246,18 @@ void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
   }
 
   // Data Parallelism
-  for (int i = 0; i < nF; i++) {
-    (*R)[i] = (double *)malloc(sizeof(double) * nI);
-    (*newR)[i] = (double *)malloc(sizeof(double) * nI);
-  }
-}
-
-void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R,
-                    double ***newL, double ***newR) {
-  srandom(0);
-  // Data Parallelism
   for (int i = 0; i < nU; i++)
     for (int j = 0; j < nF; j++) {
       (*L)[i][j] = RAND01 / (double)nF;
       (*newL)[i][j] = (*L)[i][j];
     }
+
+  // Data Parallelism
+  for (int i = 0; i < nF; i++) {
+    (*R)[i] = (double *)malloc(sizeof(double) * nI);
+    (*newR)[i] = (double *)malloc(sizeof(double) * nI);
+  }
+
   // Data Parallelism
   for (int i = 0; i < nF; i++)
     for (int j = 0; j < nI; j++) {
