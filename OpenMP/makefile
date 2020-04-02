@@ -1,2 +1,2 @@
-OpenMP: matFact.c
-	gcc -fopenmp matFact.c -o matFact
+OpenMP: matFact-omp.c
+	gcc -fopenmp matFact-omp.c -o matFact-omp
