@@ -26,7 +26,7 @@ void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R,
                     double ***newL, double ***newR);
 void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
                double ***newR, double ***B);
-void multiply_LR(int nU, int nF, double ***L, double ***R, entryA ***A_user);
+void update_recom(int nU, int nF, double ***L, double ***R, entryA ***A_user);
 void update_LR(double ***L, double ***R, double ***newL, double ***newR);
 void free_LR(int nU, int nF, double ***L, double ***R, double ***newL,
              double ***newR, double ***B);
@@ -35,7 +35,7 @@ void free_LR(int nU, int nF, double ***L, double ***R, double ***newL,
 
 int main(int argc, char *argv[]) {
   FILE *fp;
-  int nIter, nFeat, nUser, nItem, nEntry, B_item;
+  int nIter, nFeat, nUser, nItem, nEntry;
   int *solution;
   double deriv = 0;
   double alpha, sol_aux;
@@ -57,20 +57,23 @@ int main(int argc, char *argv[]) {
   }
 
   /******************************Setup******************************/
-  //read of first parameters from file
+  // read of first parameters of file
   fscanf(fp, "%d", &nIter);
   fscanf(fp, "%lf", &alpha);
   fscanf(fp, "%d", &nFeat);
   fscanf(fp, "%d %d %d", &nUser, &nItem, &nEntry);
 
-  //alloc struct that holds A and his approximation B
+  // alloc struct that holds A and it's approximation, B
   alloc_A(nUser, nItem, &A_user, &A_item, &A_user_aux, &A_item_aux);
 
+  // alloc vector that holds highest recom. per user
   solution = (int *)malloc(sizeof(int) * nUser);
 
-  // Fill A
+  // construct of a list of lists
   for (int i = 0; i < nEntry; i++) {
     A_aux1 = createNode();
+
+    // load of entry of matrix A
     fscanf(fp, "%d %d %lf", &(A_aux1->user), &(A_aux1->item), &(A_aux1->rate));
 
     if (A_user[A_aux1->user] == NULL) {
@@ -100,18 +103,26 @@ int main(int argc, char *argv[]) {
   free(A_item_aux);
   free(A_user_aux);
 
+  // alloc L, R and B where B is only used for the final calculation
   alloc_LRB(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
+  // init L and R with random values
   random_fill_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
-  multiply_LR(nUser, nFeat, &L, &R, &A_user);
+  // init of values of B that are to be approximated to the rate of 
+  // items per user, meaning the values present on A
+  update_recom(nUser, nFeat, &L, &R, &A_user);
 
   /****************************End Setup****************************/
 
   /***********************Matrix Factorization**********************/
   
+  // main main loop with stopping criterium
   for (int n = 0; n < nIter; n++) {
-    // Matrix L
+  
+    // parallelized section
     #pragma omp parallel default(none) shared(nUser, nItem, nFeat, A_user, A_item, R, L,newR, newL, alpha, deriv, A_aux1)
     {
+      // parallelized t+1 calculation of L with nowait and dynamic due to
+      // unbalanced data and no dependencies in the next loop
       #pragma omp for firstprivate(A_aux1, deriv) nowait schedule(dynamic)
       for (int i = 0; i < nUser; i++) {
         for (int k = 0; k < nFeat; k++) {
@@ -128,8 +139,9 @@ int main(int argc, char *argv[]) {
         }
       }
 
-      // Matrix R
-      #pragma omp for firstprivate(A_aux1, deriv) nowait schedule(dynamic)
+      // parallelized  t+1 calculation of R with dynamic due to
+      // unbalanced data
+      #pragma omp for firstprivate(A_aux1, deriv) schedule(dynamic)
       for (int j = 0; j < nItem; j++) {
         for (int k = 0; k < nFeat; k++) {
 
@@ -145,29 +157,31 @@ int main(int argc, char *argv[]) {
         }
       }
     }
+
+    // update of L and R with the t+1 values
     update_LR(&L, &R, &newL, &newR);
-    multiply_LR(nUser, nFeat, &L, &R, &A_user);
+    // update of B for each non-zero element of A
+    update_recom(nUser, nFeat, &L, &R, &A_user);
   }
   /*********************End Matrix Factorization********************/
- 
-  #pragma omp parallel default(none) private(nFeat, nItem) shared(nUser, B, L, R)
-  {
-    #pragma omp for
-    for (int i = 0; i < nUser; i++){
-      for (int j = 0; j < nItem; j++){
-        B[i][j] = 0;
-        
-        for (int k = 0; k < nFeat; k++)
-          B[i][j] += L[i][k] * R[k][j];
-      }
+   
+  // parallelized calculation of B
+  #pragma omp parallel for //default(none) shared(nUser, B, L, R, nFeat, nItem)
+  for (int i = 0; i < nUser; i++){
+    for (int j = 0; j < nItem; j++){
+      B[i][j] = 0;
+      
+      for (int k = 0; k < nFeat; k++)
+        B[i][j] += L[i][k] * R[k][j];
     }
-  } 
+  }
   
-  #pragma omp parallel default(none) private(B_item, sol_aux, A_aux1) shared(B, solution, nUser, A_user, nItem)
+  // parallelized section
+  #pragma omp parallel default(none) private(sol_aux, A_aux1) shared(B, solution, nUser, A_user, nItem)
   {
+    // parallelized calculation of highest recomendation rate
     #pragma omp for schedule(dynamic)
     for (int k = 0; k < nUser; k++) {
-      B_item = 0;
       sol_aux = 0;
       A_aux1 = A_user[k];
 
@@ -176,18 +190,18 @@ int main(int argc, char *argv[]) {
         A_aux1 = A_aux1->nextItem;
       }
 
-      while (B_item < nItem) {
-        if (B[k][B_item] > sol_aux) {
-          solution[k] = B_item;
-          sol_aux = B[k][B_item];
+      for(int j = 0; j < nItem; j++){
+        if (B[k][j] > sol_aux) {
+          solution[k] = j;
+          sol_aux = B[k][j];
         }
-
-        B_item++;
       }
     }
   }
   
   /****************************Write File***************************/
+  
+  // create .out file for writing
   outputFile = strtok(argv[1], ".");
   strcat(outputFile, ".out\0");
 
@@ -197,6 +211,7 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
+  // write recomendation on file per user
   for (int i = 0; i < nUser; i++) {
     fprintf(fp, "%d\n", solution[i]);
   }
@@ -224,79 +239,6 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
-               double ***newR, double ***B) {
-                 
-  *B = (double **)malloc(sizeof(double *) * nU);
-  *L = (double **)malloc(sizeof(double *) * nU);
-  *newL = (double **)malloc(sizeof(double *) * nU);
-  *R = (double **)malloc(sizeof(double *) * nF);
-  *newR = (double **)malloc(sizeof(double *) * nF);
-  
-  #pragma omp parallel default(none) shared(B, L, newL, R, newR, nU, nF, nI)
-  {
-    #pragma omp for
-    for (int i = 0; i < nU; i++) {
-      (*B)[i] = (double *)malloc(sizeof(double) * nI);
-      (*L)[i] = (double *)malloc(sizeof(double) * nF);
-      (*newL)[i] = (double *)malloc(sizeof(double) * nF);
-    }
-
-    #pragma omp for
-    for (int i = 0; i < nF; i++) {
-      (*R)[i] = (double *)malloc(sizeof(double) * nI);
-      (*newR)[i] = (double *)malloc(sizeof(double) * nI);
-    }
-  } 
-} 
-
-void multiply_LR(int nU, int nF, double ***L, double ***R, entryA ***A_user) {
-  entryA *A_aux1;
-
-  #pragma omp parallel default(none) private(A_aux1) shared(nU, nF, L, R, A_user)
-  {
-    #pragma omp for schedule(dynamic)
-    for (int i = 0; i < nU; i++) {
-      A_aux1 = (*A_user)[i];
-      while (A_aux1 != NULL) {
-        A_aux1->recom = 0;
-
-        for (int k = 0; k < nF; k++)
-          A_aux1->recom += (*L)[i][k] * (*R)[k][A_aux1->item];
-        A_aux1 = A_aux1->nextItem;
-      }
-    }
-  }
-}
-
-void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R,
-                    double ***newL, double ***newR) {
-  srandom(0);
-  
-  for (int i = 0; i < nU; i++)
-    for (int j = 0; j < nF; j++) {
-      (*L)[i][j] = RAND01 / (double)nF;
-      (*newL)[i][j] = (*L)[i][j];
-    }
-  
-  for (int i = 0; i < nF; i++)
-    for (int j = 0; j < nI; j++) {
-      (*R)[i][j] = RAND01 / (double)nF;
-      (*newR)[i][j] = (*R)[i][j];
-    }
-}
-
-void update_LR(double ***L, double ***R, double ***newL, double ***newR) {
-
-  double **aux;
-  aux = *L;
-  *L = *newL;
-  *newL = aux;
-
-  aux = *R;
-  *R = *newR;
-  *newR = aux;
-}
 
 void alloc_A(int nU, int nI, entryA ***_A_user, entryA ***_A_item,
              entryA ***_A_user_aux, entryA ***_A_item_aux) {
@@ -316,6 +258,96 @@ entryA *createNode() {
   A->nextUser = NULL;
 
   return A;
+}
+
+void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
+               double ***newR, double ***B) {
+                 
+  *B = (double **)malloc(sizeof(double *) * nU);
+  *L = (double **)malloc(sizeof(double *) * nU);
+  *newL = (double **)malloc(sizeof(double *) * nU);
+  *R = (double **)malloc(sizeof(double *) * nF);
+  *newR = (double **)malloc(sizeof(double *) * nF);
+  
+  // parallelized section
+  #pragma omp parallel default(none) shared(B, L, newL, R, newR, nU, nF, nI) 
+  {
+
+    // parallelized allocation with nowait because there 
+    // are no dependencies in the next loop
+    #pragma omp for nowait
+    for (int i = 0; i < nU; i++) {
+      (*B)[i] = (double *)malloc(sizeof(double) * nI);
+      (*L)[i] = (double *)malloc(sizeof(double) * nF);
+      (*newL)[i] = (double *)malloc(sizeof(double) * nF);
+    }
+    
+    // parallelized allocation without nowait due to
+    // synchronization in the end of the section
+    #pragma omp for
+    for (int i = 0; i < nF; i++) {
+      (*R)[i] = (double *)malloc(sizeof(double) * nI);
+      (*newR)[i] = (double *)malloc(sizeof(double) * nI);
+    }
+  } 
+} 
+
+void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R,
+                    double ***newL, double ***newR) {
+  srandom(0);
+
+  // init of L, stable version, and newL for t+1
+  for (int i = 0; i < nU; i++)
+    for (int j = 0; j < nF; j++) {
+      (*L)[i][j] = RAND01 / (double)nF;
+      (*newL)[i][j] = (*L)[i][j];
+    }
+  
+  // init of R, stable version, and newR for t+1
+  for (int i = 0; i < nF; i++)
+    for (int j = 0; j < nI; j++) {
+      (*R)[i][j] = RAND01 / (double)nF;
+      (*newR)[i][j] = (*R)[i][j];
+    }
+}
+
+void update_LR(double ***L, double ***R, double ***newL, double ***newR) {
+
+  double **aux;
+
+  // update stable version of L with L(t+1) by switching
+  // the pointers 
+  aux = *L;
+  *L = *newL;
+  *newL = aux;
+
+  // update stable version of R with R(t+1) by switching
+  // the pointers 
+  aux = *R;
+  *R = *newR;
+  *newR = aux;
+}
+
+void update_recom(int nU, int nF, double ***L, double ***R, entryA ***A_user) {
+  entryA *A_aux1;
+
+  // parallelized section
+  #pragma omp parallel default(none) private(A_aux1) shared(nU, nF, L, R, A_user)
+  {
+    // parallelized update of recomendation with dynamic
+    // due to unbalanced data
+    #pragma omp for schedule(dynamic)
+    for (int i = 0; i < nU; i++) {
+      A_aux1 = (*A_user)[i];
+      while (A_aux1 != NULL) {
+        A_aux1->recom = 0;
+
+        for (int k = 0; k < nF; k++)
+          A_aux1->recom += (*L)[i][k] * (*R)[k][A_aux1->item];
+        A_aux1 = A_aux1->nextItem;
+      }
+    }
+  }
 }
 
 void free_LR(int nU, int nF, double ***L, double ***R, double ***newL,
