@@ -10,26 +10,28 @@
 
 #define RAND01 ((double)random() / (double)RAND_MAX)
 
-typedef struct entryA {
+typedef struct entry {
   int user;
   int item;
   double rate;
   double recom;
-  struct entryA *nextItem;
-  struct entryA *nextUser;
-} entryA;
+  struct entry *nextItem;
+  struct entry *nextUser;
+} entry;
 
-void alloc_A(int nU, int nI, entryA ***_A_user, entryA ***_A_item,
-             entryA ***_A_user_aux, entryA ***_A_item_aux);
 
-entryA *createNode();
+void alloc_A(int nU, int nI, entry ***_A_user, entry ***_A_item,
+             entry ***_A_user_aux, entry ***_A_item_aux);
+
+entry *createNode();
 
 void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
                double ***newR, double ***B);
 void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R,
                     double ***newL, double ***newR);
-void multiply_LR(int nU, int nF, double ***L, double ***R,
-                 entryA ***A_user);
+void update_recom(int nU, int nF, double ***L, double ***R,
+                 entry ***A_user);
+
 void update_LR(double ***L, double ***R, double ***newL, double ***newR);
 void free_LR(int nU, int nF, double ***L, double ***R, double ***newL,
              double ***newR, double ***B);
@@ -38,15 +40,15 @@ void free_LR(int nU, int nF, double ***L, double ***R, double ***newL,
 
 int main(int argc, char *argv[]) {
   FILE *fp;
-  int nIter, nFeat, nUser, nItem, nEntry, B_item;
+  int nIter, nFeat, nUser, nItem, nEntry;
   int *solution;
   double deriv = 0;
   double alpha, sol_aux;
   double **L, **R, **B, **newL, **newR;
   char *outputFile;
 
-  entryA **A_user, **A_user_aux, **A_item, **A_item_aux;
-  entryA *A_aux1, *A_aux2;
+  entry **A_user, **A_user_aux, **A_item, **A_item_aux;
+  entry *A_aux1, *A_aux2;
 
   if (argc != 2) {
     printf("error: command of type ./matFact <filename.in>\n");
@@ -60,19 +62,22 @@ int main(int argc, char *argv[]) {
   }
 
   /******************************Setup******************************/
-  // Functional Parallelism
+  // read of first parameters of file
   fscanf(fp, "%d", &nIter);
   fscanf(fp, "%lf", &alpha);
   fscanf(fp, "%d", &nFeat);
   fscanf(fp, "%d %d %d", &nUser, &nItem, &nEntry);
 
+  // alloc struct that holds A and it's approximation, B
   alloc_A(nUser, nItem, &A_user, &A_item, &A_user_aux, &A_item_aux);
 
+  // alloc vector that holds highest recom. per user
   solution = (int *)malloc(sizeof(int) * nUser);
 
-  // Fill A
+  // construct of a list of lists
   for (int i = 0; i < nEntry; i++) {
     A_aux1 = createNode();
+    // load of entry of matrix A
     fscanf(fp, "%d %d %lf", &(A_aux1->user), &(A_aux1->item), &(A_aux1->rate));
 
     if (A_user[A_aux1->user] == NULL) {
@@ -102,50 +107,64 @@ int main(int argc, char *argv[]) {
   free(A_item_aux);
   free(A_user_aux);
 
+  // alloc L, R and B where B is only used for the final calculation
   alloc_LRB(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
+  // init L and R with random values
   random_fill_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
-  multiply_LR(nUser, nFeat, &L, &R, &A_user);
+  // init of values of B that are to be approximated to the rate of 
+  // items per user
+  update_recom(nUser, nFeat, &L, &R, &A_user);
+
 
   /****************************End Setup****************************/
 
   /***********************Matrix Factorization**********************/
+  
+  // main loop with stopping criterium
   for (int n = 0; n < nIter; n++) {
-    // Matrix L
+    // calculation of the t+1 iteration of L 
     for (int i = 0; i < nUser; i++) {
       for (int k = 0; k < nFeat; k++) {
 
         A_aux1 = A_user[i];
+        // sum of derivatives per item
         while (A_aux1 != NULL) {
           deriv +=
               2 * (A_aux1->rate - A_aux1->recom) * (-R[k][A_aux1->item]);
           A_aux1 = A_aux1->nextItem;
         }
-
+        // final calculation of t+1
         newL[i][k] = L[i][k] - alpha * deriv;
         deriv = 0;
       }
     }
 
-    // Matrix R
+    // calculation of the t+1 iteration of R
     for (int j = 0; j < nItem; j++) {
       for (int k = 0; k < nFeat; k++) {
 
         A_aux1 = A_item[j];
+        // sum of derivatives per user
         while (A_aux1 != NULL) {
           deriv +=
               2 * (A_aux1->rate - A_aux1->recom) * (-L[A_aux1->user][k]);
           A_aux1 = A_aux1->nextUser;
         }
-
+        // final calculation of t+1
         newR[k][j] = R[k][j] - alpha * deriv;
         deriv = 0;
       }
     }
-
+    // update of L and R with the t+1 values
     update_LR(&L, &R, &newL, &newR);
-    multiply_LR(nUser, nFeat, &L, &R, &A_user);
+    // update of B for each non-zero element of A
+    update_recom(nUser, nFeat, &L, &R, &A_user);
+
   }
   /*********************End Matrix Factorization********************/
+  
+  // calculation of the entire B matrix meaning the 
+  // internal product between L and R
   for (int i = 0; i < nUser; i++)
     for (int j = 0; j < nItem; j++) {
       B[i][j] = 0;
@@ -153,27 +172,29 @@ int main(int argc, char *argv[]) {
         B[i][j] += L[i][k] * R[k][j];
     }
 
+  // update of solution with highest calculated recomendation 
+  // rate per user 
   for (int k = 0; k < nUser; k++) {
-    B_item = 0;
     sol_aux = 0;
     A_aux1 = A_user[k];
 
+    // update entry of B to 0 if item already rated
     while (A_aux1 != NULL) {
       B[k][A_aux1->item] = 0;
       A_aux1 = A_aux1->nextItem;
     }
-
-    while (B_item < nItem) {
-      if (B[k][B_item] > sol_aux) {
-        solution[k] = B_item;
-        sol_aux = B[k][B_item];
+    // save item with highest rate
+    for(int j = 0; j < nItem; j++){
+      if (B[k][j] > sol_aux) {
+        solution[k] = j;
+        sol_aux = B[k][j];
       }
-
-      B_item++;
     }
   }
 
   /****************************Write File***************************/
+  
+  // create .out file for writing
   outputFile = strtok(argv[1], ".");
   strcat(outputFile, ".out\0");
 
@@ -183,6 +204,7 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
+  // write recomendation on file per user
   for (int i = 0; i < nUser; i++) {
     fprintf(fp, "%d\n", solution[i]);
   }
@@ -210,20 +232,20 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-void alloc_A(int nU, int nI, entryA ***_A_user, entryA ***_A_item,
-             entryA ***_A_user_aux, entryA ***_A_item_aux) {
+void alloc_A(int nU, int nI, entry ***_A_user, entry ***_A_item,
+             entry ***_A_user_aux, entry ***_A_item_aux) {
 
-  *_A_user = (entryA **)calloc(sizeof(entryA *), nU);
-  *_A_item = (entryA **)calloc(sizeof(entryA *), nI);
+  *_A_user = (entry **)calloc(sizeof(entry *), nU);
+  *_A_item = (entry **)calloc(sizeof(entry *), nI);
 
-  *_A_user_aux = (entryA **)calloc(sizeof(entryA *), nU);
-  *_A_item_aux = (entryA **)calloc(sizeof(entryA *), nI);
+  *_A_user_aux = (entry **)calloc(sizeof(entry *), nU);
+  *_A_item_aux = (entry **)calloc(sizeof(entry *), nI);
 }
 
-entryA *createNode() {
+entry *createNode() {
 
-  entryA *A;
-  A = (entryA *)malloc(sizeof(entryA));
+  entry *A;
+  A = (entry *)malloc(sizeof(entry));
   A->nextItem = NULL;
   A->nextUser = NULL;
 
@@ -233,21 +255,18 @@ entryA *createNode() {
 void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
                double ***newR, double ***B) {
 
-  // Functional Parallelism
   *B = (double **)malloc(sizeof(double *) * nU);
   *L = (double **)malloc(sizeof(double *) * nU);
   *newL = (double **)malloc(sizeof(double *) * nU);
   *R = (double **)malloc(sizeof(double *) * nF);
   *newR = (double **)malloc(sizeof(double *) * nF);
 
-  // Data Parallelism
   for (int i = 0; i < nU; i++) {
     (*B)[i] = (double *)malloc(sizeof(double) * nI);
     (*L)[i] = (double *)malloc(sizeof(double) * nF);
     (*newL)[i] = (double *)malloc(sizeof(double) * nF);
   }
 
-  // Data Parallelism
   for (int i = 0; i < nF; i++) {
     (*R)[i] = (double *)malloc(sizeof(double) * nI);
     (*newR)[i] = (double *)malloc(sizeof(double) * nI);
@@ -257,19 +276,22 @@ void alloc_LRB(int nU, int nI, int nF, double ***L, double ***R, double ***newL,
 void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R,
                     double ***newL, double ***newR) {
   srandom(0);
-  // Data Parallelism
+  
+  // init of L, stable version, and newL for t+1
   for (int i = 0; i < nU; i++)
     for (int j = 0; j < nF; j++) {
       (*L)[i][j] = RAND01 / (double)nF;
       (*newL)[i][j] = (*L)[i][j];
     }
-  // Data Parallelism
+
+  // init of R, stable version, and newR for t+1
   for (int i = 0; i < nF; i++)
     for (int j = 0; j < nI; j++) {
       (*R)[i][j] = RAND01 / (double)nF;
       (*newR)[i][j] = (*R)[i][j];
     }
 }
+
 
 void multiply_LR(int nU, int nF, double ***L, double ***R,
                  entryA ***A_user) {
@@ -286,22 +308,28 @@ void multiply_LR(int nU, int nF, double ***L, double ***R,
   }
 }
 
-void update_LR(double ***L, double ***R, double ***newL, double ***newR) {
 
-  double **aux;
-  aux = *L;
-  *L = *newL;
-  *newL = aux;
+void update_recom(int nU, int nF, double ***L, double ***R,
+                 entry ***A_user) {
+  entry *A_aux1;
 
-  aux = *R;
-  *R = *newR;
-  *newR = aux;
+  // update recomendation for all non-zero entries meaning
+  // the approximation of B to A
+  for (int i = 0; i < nU; i++) {
+    A_aux1 = (*A_user)[i];
+    while (A_aux1 != NULL) {
+      A_aux1->recom = 0;
+      
+      for (int k = 0; k < nF; k++)
+        A_aux1->recom += (*L)[i][k] * (*R)[k][A_aux1->item];
+      A_aux1 = A_aux1->nextItem;
+    }
+  }
 }
 
 void free_LR(int nU, int nF, double ***L, double ***R, double ***newL,
              double ***newR, double ***B) {
 
-  // Data Parallelism
   for (int i = 0; i < nU; i++) {
     free((*B)[i]);
     free((*L)[i]);
@@ -311,7 +339,6 @@ void free_LR(int nU, int nF, double ***L, double ***R, double ***newL,
   free(*L);
   free(*newL);
 
-  // Data Parallelism
   for (int i = 0; i < nF; i++) {
     free((*R)[i]);
     free((*newR)[i]);
