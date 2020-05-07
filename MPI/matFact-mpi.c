@@ -82,12 +82,24 @@ int main(int argc, char *argv[])
 
   // alloc vector that holds highest recom. per user
   solution = (int *)malloc(sizeof(int) * nUser);
+  // vector with number of items per user
+  int *count = (int*)calloc(sizeof(int), nUser);
+  int auxUser = 0, userInx = 0;
 
   // construct of a list of lists
   for (int i = 0; i < nEntry; i++) {
     A_aux1 = createNode();
     // load of entryAof matrix A
     fscanf(fp, "%d %d %lf", &(A_aux1->user), &(A_aux1->item), &(A_aux1->rate));
+
+    if(auxUser == A_aux1->user){
+      count[userInx] ++;
+    }
+    else{
+      auxUser = A_aux1->user;
+      userInx++;
+      count[userInx] ++;
+    }
 
     if (A_user[A_aux1->user] == NULL) {
 
@@ -116,62 +128,63 @@ int main(int argc, char *argv[])
   free(A_item_aux);
   free(A_user_aux);
 
-  /************Code for load balance************/
+  /*for(int i = 0; i < nUser; i++){
+    printf("counts:%d\n", count[i]);
+  }*/
+
+  /*******************Code for load balance********************/
+
   typedef struct group{
     // total count of number of entries
     int count;
     // indexes of users assigned to group
     int idx[nUser];
+    // total machines
+    int numIdx;
   } group;
 
   // number of groups
   double divf = sqrt(np);
-  int div = floor(div);
+  int div = floor(divf);
   // number of entries per division rounded down
   int lower = nEntry / div;
-  lower = (int)floor(lower);
   // number of entries per division plus one
   int upper = nEntry / div + 1;
   // rest of division
   int rest =  div % nEntry;
 
-  int aux;
-  
+  int aux = 0;
+  //printf("lower:%d - upper:%d\n", lower, upper);
+
   // vector with groups of users 
   group *groups = (group*)calloc(sizeof(group), div);
-  // vector with number of items per user
-  int *counts = (int*)calloc(sizeof(int), nUser);
 
-  int j = 0, k = 0;
+  int j = 0;
 
   for(i = 0; i < nUser; i++){
     // if we are in the last partition it gets the remaing users
-    if(j = div-1){
-      groups[j].count + counts[i];
-      groups[j].idx[k] = i;
-      k++;
-      continue;
+    if(j == div-1){
+      groups[j].count += count[i];
     }
     else{
       // aux that stores the possibel new user for that group
-      aux = groups[j].count + counts[i];
+      aux = groups[j].count + count[i];
 
       if(aux <= lower){
         groups[j].count = aux;
-        groups[j].idx[k] = i;
-        k++;
-        continue;
       }
       // if threshold is atchived
       else if((aux - upper) >= 0){
         // check to see where the difference betwhen the two threshold
         // is less
-        if((aux - lower) < (aux - upper)){
+        if(abs(groups[j].count - lower) < (aux - upper)){
           // add the difference between the desired threshold
           rest += aux - lower;
           // advance to next group
           j++;
-          k = 0;
+          // the count that wasnt considered becaused it was closer to the lower boundary
+          // thank the upper is put automatically in the next group 
+          groups[j].count = count[i];
         }
         // check to see if there were already other groups to be above the upper threshold
         // decrising already the rest
@@ -180,24 +193,50 @@ int main(int argc, char *argv[])
           rest -= aux - upper;
           // add the final user for that group
           groups[j].count = aux;
-          groups[j].idx[k] = i;
           // advance to next group
           j++;
-          k = 0;
         }
         // if so does not add the next user to the group
         else{
           // add the difference between the desired threshold
           rest += aux - lower;
+          // add the final user for that group
+          groups[j].count = aux;
           // advance to next group
           j++;
-          k = 0;
         }
       }
     }
   }
 
-  /****************************End Setup****************************/
+  int k = 0;
+
+  // assigns a each group a set of computers 
+  for(int i = 0; i < div; i++){
+    //printf("\ngroup %d - count: %d\n", i, groups[i].count);
+    //fflush(stdin);
+
+    for(int j = 0; j < div; j++){
+      // if de problem in not divisible by the number of computers sets
+      // to the maximun possible meaning the group with zero rows are not 
+      // assinged to any machine
+      if(groups[i].count != 0){
+        groups[i].idx[j] = k;
+        //printf("  m: %d\n", k);
+        //fflush(stdin);
+        k++;
+      }
+      else{
+        break;
+      }
+    }
+  }
+
+  /*for(int i = 0; i < div; i++){
+    printf("\ngroup %d - count: %d\n", i, groups[i].count);
+  }*/
+
+  /*******************Code for load balance********************/
 
   /***********************Matrix Factorization**********************/
 
@@ -206,7 +245,7 @@ int main(int argc, char *argv[])
   /**************************Free of memory*************************/
 
   free(groups);
-  free(counts)
+  free(count);
 
   elapsed_time += MPI_Wtime();
   MPI_Finalize();
