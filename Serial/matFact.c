@@ -19,6 +19,7 @@ typedef struct entry {
   struct entry *nextUser;
 } entry;
 
+
 void alloc_A(int nU, int nI, entry ***_A_user, entry ***_A_item,
              entry ***_A_user_aux, entry ***_A_item_aux);
 
@@ -30,6 +31,7 @@ void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R,
                     double ***newL, double ***newR);
 void update_recom(int nU, int nF, double ***L, double ***R,
                  entry ***A_user);
+
 void update_LR(double ***L, double ***R, double ***newL, double ***newR);
 void free_LR(int nU, int nF, double ***L, double ***R, double ***newL,
              double ***newR, double ***B);
@@ -113,6 +115,7 @@ int main(int argc, char *argv[]) {
   // items per user
   update_recom(nUser, nFeat, &L, &R, &A_user);
 
+
   /****************************End Setup****************************/
 
   /***********************Matrix Factorization**********************/
@@ -156,6 +159,7 @@ int main(int argc, char *argv[]) {
     update_LR(&L, &R, &newL, &newR);
     // update of B for each non-zero element of A
     update_recom(nUser, nFeat, &L, &R, &A_user);
+
   }
   /*********************End Matrix Factorization********************/
   
@@ -288,22 +292,22 @@ void random_fill_LR(int nU, int nI, int nF, double ***L, double ***R,
     }
 }
 
-void update_LR(double ***L, double ***R, double ***newL, double ***newR) {
 
-  double **aux;
+void multiply_LR(int nU, int nF, double ***L, double ***R,
+                 entryA ***A_user) {
+  entryA *A_aux1;
 
-  // update stable version of L with L(t+1) by switching
-  // the pointers 
-  aux = *L;
-  *L = *newL;
-  *newL = aux;
-
-  // update stable version of R with R(t+1) by switching
-  // the pointers 
-  aux = *R;
-  *R = *newR;
-  *newR = aux;
+  for (int i = 0; i < nU; i++) {
+    A_aux1 = (*A_user)[i];
+    while (A_aux1 != NULL) {
+      A_aux1->recom = 0;
+      for (int k = 0; k < nF; k++)
+        A_aux1->recom += (*L)[i][k] * (*R)[k][A_aux1->item];
+      A_aux1 = A_aux1->nextItem;
+    }
+  }
 }
+
 
 void update_recom(int nU, int nF, double ***L, double ***R,
                  entry ***A_user) {
