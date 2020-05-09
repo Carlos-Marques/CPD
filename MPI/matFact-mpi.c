@@ -27,7 +27,7 @@ typedef struct entry {
     int firstUser;
     int lastUser;
     // list of machines for that group
-    int machines[world_size];
+    int machines[200];
     // total machines
     int numIdx;
   } group;
@@ -558,7 +558,8 @@ int main(int argc, char *argv[]) {
   //free(group_B);
 
   //printf("Finalizing\n");
-  elapsed_time += MPI_Wtime();
+  //elapsed_time += MPI_Wtime();
+  printf("elapsed_time: %.1f\n", elapsed_time);
 
   MPI_Finalize();
 
