@@ -173,22 +173,15 @@ int main(int argc, char *argv[]) {
   // rest of division
   int rest =  div % nEntry;
   
-  // lower num of machines per group
-  int lowerMach = world_size / div;
-  // upper num of machines per group
-  int upperMach = lowerMach + 1;
-  // only use upper if rest of division not zero
-  int restMach = world_size % div;
-
   int aux = 0, j = 0;
 
-  // vector with groups of users 
+  // vector with groups of users
   group *groups = (group*)calloc(sizeof(group), div);
 
   for(int i = 0; i < nUser; i++){
     // save first user of the group
     if(groups[j].count == 0) groups[j].firstUser = i;
-    
+
     // if we are in the last partition it gets the remaing users
     if(j == div-1) groups[j].count += count[i];
     else{
@@ -209,7 +202,7 @@ int main(int argc, char *argv[]) {
           // advance to next group
           j++;
           // the count that wasnt considered becaused it was closer to the lower boundary
-          // is put automatically in the next group 
+          // is put automatically in the next group
           groups[j].count = count[i];
           // save first user of the group
           groups[j].firstUser = i;
@@ -243,10 +236,17 @@ int main(int argc, char *argv[]) {
     if(i+1 == nUser) groups[j].lastUser = i;
   }
 
+  // lower num of machines per group
+  int lowerMach = world_size / div;
+  // upper num of machines per group
+  int upperMach = lowerMach + 1;
+  // only use upper if rest of division not zero
+  int restMach = world_size % div;
+
   int k = 0;
   int divMach = upperMach;
 
-  // assigns a each group a set of computers 
+  // assigns a each group a set of computers
   for(int i = 0; i < div; i++){
     if(restMach == 0) divMach = lowerMach;
     else restMach -= 1;
@@ -268,7 +268,7 @@ int main(int argc, char *argv[]) {
   }
 
 /*
-  if(world_rank == 2) {
+  if(world_rank == 4) {
     printf("My group: %d\n", my_group);
     printf("nEntries: %d\n", groups[my_group].count);
     printf("first_user: %d\n", groups[my_group].firstUser);
@@ -400,6 +400,44 @@ int main(int argc, char *argv[]) {
     }
 */
 
+
+  group *R_groups = (group*)calloc(sizeof(group), groups[my_group].numMach);
+
+  // lower num of machines per group
+  lowerMach = nFeat/groups[my_group].numMach;
+  // upper num of machines per group
+  upperMach = lowerMach + 1;
+  // only use upper if rest of division not zero
+  restMach =  nFeat % groups[my_group].numMach;
+
+  divMach = upperMach;
+
+  k = 0;
+
+  int my_R_group;
+
+  for(int i = 0; i < groups[my_group].numMach; i++){
+    if(restMach == 0) divMach = lowerMach;
+    else restMach -= 1;
+
+    R_groups[i].machines = malloc(sizeof(int) * div);
+    for(int j = 0; j < div; j++){
+      R_groups[i].machines[j] = groups[j].machines[i];
+      R_groups[i].firstUser = k;
+      R_groups[i].lastUser = R_groups[i].firstUser + divMach;
+      if(world_rank == R_groups[i].machines[j]) my_R_group = i;
+    }
+    k = R_groups[i].lastUser;
+  }
+
+  //printf("my_R_group: %d %d %d %d\n", world_rank, my_R_group, R_groups[my_R_group].firstUser, R_groups[my_R_group].lastUser);
+
+  k0 = R_groups[my_R_group].firstUser;
+  k1 = R_groups[my_R_group].lastUser;
+  MPI_Group_incl(world_group, div, R_groups[my_R_group].machines, &R_group);
+  MPI_Comm_create_group(MPI_COMM_WORLD, R_group, 0, &R_comm);
+
+/*
   if(world_rank == 0 || world_rank == 2) {
     int rank[] = {0, 2};
     MPI_Group_incl(world_group, 2, rank, &R_group);
@@ -407,13 +445,14 @@ int main(int argc, char *argv[]) {
     k0 = 0;
     k1 = 1;
   }
-  else {
+  else{
     int rank[] = {1, 3};
     MPI_Group_incl(world_group, 2, rank, &R_group);
     MPI_Comm_create_group(MPI_COMM_WORLD, R_group, 0, &R_comm);
     k0 = 1;
     k1 = 2;
   }
+  */
 
   int inter = k1-k0;
   int sizeof_derivs = (inter*nItem);
@@ -432,8 +471,6 @@ int main(int argc, char *argv[]) {
     printf("id: %d B:%f\n", i, group_B[i]);
   }
   */
-  int test = 0;
-
 
   //L+1
   for (int i = 0; i < nUser; i++) {
@@ -457,7 +494,6 @@ int main(int argc, char *argv[]) {
       }
       //printf("\n");
     }
-
   //printf("Calc L+1 %d\n", world_rank);
   //R+1
   int c = 0;
@@ -547,7 +583,7 @@ int main(int argc, char *argv[]) {
   int *global_solution;
   global_solution = calloc(sizeof(int), nUser_original);
 
-  if(world_rank == 0 || world_rank == 2){
+  if(my_R_group == 0){
     MPI_Reduce(solution, global_solution, nUser_original, MPI_INT, MPI_SUM, 0, R_comm);
   }
 
