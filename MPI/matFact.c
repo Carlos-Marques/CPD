@@ -149,7 +149,7 @@ int main(int argc, char *argv[]) {
     int rank[] = {0, 1};
     MPI_Group_incl(world_group, 2, rank, &B_group);
     MPI_Comm_create_group(MPI_COMM_WORLD, B_group, 0, &B_comm);
-    nUser = 500;
+    nUser = 472;
     user_i = 0;
     A_user = split_A(&A_user, &A_item, user_i, nUser, nUser_original, nItem);
 
@@ -181,8 +181,8 @@ int main(int argc, char *argv[]) {
     int rank[] = {2, 3};
     MPI_Group_incl(world_group, 2, rank, &B_group);
     MPI_Comm_create_group(MPI_COMM_WORLD, B_group, 0, &B_comm);
-    nUser = 500;
-    user_i = 500;
+    nUser = 471;
+    user_i = 472;
     A_user = split_A(&A_user, &A_item, user_i, nUser, nUser_original, nItem);
 
     for (int i = 0; i < nUser; i++) {
@@ -243,14 +243,14 @@ int main(int argc, char *argv[]) {
     MPI_Group_incl(world_group, 2, rank, &R_group);
     MPI_Comm_create_group(MPI_COMM_WORLD, R_group, 0, &R_comm);
     k0 = 0;
-    k1 = 50;
+    k1 = 15;
   }
   else {
     int rank[] = {1, 3};
     MPI_Group_incl(world_group, 2, rank, &R_group);
     MPI_Comm_create_group(MPI_COMM_WORLD, R_group, 0, &R_comm);
-    k0 = 50;
-    k1 = 100;
+    k0 = 15;
+    k1 = 30;
   }
 
   int inter = k1-k0;
