@@ -90,7 +90,7 @@ int main(int argc, char *argv[]) {
   alloc_A(nUser, nItem, &A_user, &A_item, &A_user_aux, &A_item_aux);
 
   // alloc vector that holds highest recom. per user
-  solution = (int *)malloc(sizeof(int) * nUser);
+  solution = calloc(sizeof(int), nUser);
 
   // construct of a list of lists
   for (int i = 0; i < nEntry; i++) {
@@ -141,14 +141,17 @@ int main(int argc, char *argv[]) {
 
   int k0, k1;
   int counter = 0;
+  int user_i = 0;
+  int user_l = 0;
 
   //printf("world_rank: %d\n", world_rank);
   if(world_rank == 0 || world_rank == 1){
     int rank[] = {0, 1};
     MPI_Group_incl(world_group, 2, rank, &B_group);
     MPI_Comm_create_group(MPI_COMM_WORLD, B_group, 0, &B_comm);
-    nUser = 2;
-    A_user = split_A(&A_user, &A_item, 0, nUser, nUser_original, nItem);
+    nUser = 500;
+    user_i = 0;
+    A_user = split_A(&A_user, &A_item, user_i, nUser, nUser_original, nItem);
 
 
     for (int i = 0; i < nUser; i++) {
@@ -178,8 +181,9 @@ int main(int argc, char *argv[]) {
     int rank[] = {2, 3};
     MPI_Group_incl(world_group, 2, rank, &B_group);
     MPI_Comm_create_group(MPI_COMM_WORLD, B_group, 0, &B_comm);
-    nUser = 1;
-    A_user = split_A(&A_user, &A_item, 2, nUser, nUser_original, nItem);
+    nUser = 500;
+    user_i = 500;
+    A_user = split_A(&A_user, &A_item, user_i, nUser, nUser_original, nItem);
 
     for (int i = 0; i < nUser; i++) {
       A_aux1 = A_user[i];
@@ -191,6 +195,7 @@ int main(int argc, char *argv[]) {
         A_aux1 = A_aux1->nextItem;
       }
     }
+
 
     local_B = malloc(sizeof(double) * counter+1);
     group_B = malloc(sizeof(double)* counter+1);
@@ -205,118 +210,11 @@ int main(int argc, char *argv[]) {
 
   }
 
-  if(world_rank == 0 || world_rank == 2) {
-    int rank[] = {0, 2};
-    MPI_Group_incl(world_group, 2, rank, &R_group);
-    MPI_Comm_create_group(MPI_COMM_WORLD, R_group, 0, &R_comm);
-    k0 = 0;
-    k1 = 1;
-  }
-  else {
-    int rank[] = {1, 3};
-    MPI_Group_incl(world_group, 2, rank, &R_group);
-    MPI_Comm_create_group(MPI_COMM_WORLD, R_group, 0, &R_comm);
-    k0 = 1;
-    k1 = 2;
-  }
-
-  int inter = k1-k0;
-  int sizeof_derivs = (inter*nItem);
-  double *derivs = malloc(sizeof(double) * sizeof_derivs);
-  double *global_derivs = malloc(sizeof(double) * sizeof_derivs);
-
-  for (int n = 0; n < nIter; n++) {
-  update_recom(nUser, k0, k1, &L, &R, &A_user, local_B, group_B, B_comm, counter+1);
-
-  /*
-  for(int i = 0; i < counter; i++){
-    printf("id: %d B:%f\n", i, group_B[i]);
-  }
-  */
-
-  //L+1
-  for (int i = 0; i < nUser; i++) {
-      for (int k = k0; k < k1; k++) {
-
-        A_aux1 = A_user[i];
-        // sum of derivatives per item
-        while (A_aux1 != NULL) {
-          deriv +=
-              2 * (A_aux1->rate - group_B[A_aux1->recom]) * (-R[k][A_aux1->item]);
-          A_aux1 = A_aux1->nextItem;
-        }
-        // final calculation of t+1
-        A_aux1 = A_user[i];
-        newL[A_aux1->user][k] = L[A_aux1->user][k] - alpha * deriv;
-        //printf("L: %f\n", L[A_aux1->user][k]);
-        //printf("newL: %f\n", newL[A_aux1->user][k]);
-        deriv = 0;
-      }
-      //printf("\n");
-    }
-
-  //R+1
-  int c = 0;
-  for (int j = 0; j < nItem; j++) {
-      for (int k = k0; k < k1; k++) {
-
-        A_aux1 = A_item[j];
-        // sum of derivatives per user
-        while (A_aux1 != NULL) {
-          deriv += 2 * (A_aux1->rate - group_B[A_aux1->recom]) * (-L[A_aux1->user][k]);
-          A_aux1 = A_aux1->nextUser;
-        }
-        // final calculation of t+1
-        derivs[c] = alpha * deriv;
-        c++;
-        deriv = 0;
-      }
-    }
-  /*printf("sizeof_derivs: %d\n", c);
-  printf("cal size: %d\n", sizeof_derivs);
-  */
-  MPI_Allreduce(derivs, global_derivs, sizeof_derivs, MPI_DOUBLE, MPI_SUM, R_comm);
-  c = 0;
-  for (int j = 0; j < nItem; j++) {
-    for (int k = k0; k < k1; k++) {
-
-      newR[k][j] = R[k][j] - global_derivs[c];
-      //printf("world_rank: %d global_derivs: %f R: %f newR: %f\n", world_rank, global_derivs[c], R[k][j], newR[k][j]);
-      c++;
-      }
-  }
-
-  update_LR(&L, &R, &newL, &newR);
-  }
-
-  local_B_final = malloc(sizeof(double) * nUser * nItem);
-  group_B_final = malloc(sizeof(double) * nUser * nItem);
-
-  int c = 0;
-  for (int i = 0; i < nUser; i++) {
-    A_aux1 = A_user[i];
-    for (int j = 0; j < nItem; j++) {
-      local_B_final[c] = 0;
-      group_B_final[c] = 0;
-      for (int k = k0; k < k1; k++){
-        local_B_final[c] += L[A_aux1->user][k] * R[k][j];
-      }
-      c++;
-    }
-  }
-
-  MPI_Allreduce(local_B_final, group_B_final, nUser * nItem, MPI_DOUBLE, MPI_SUM, B_comm);
-
-  if(world_rank == 0){
-    printf("L: %f\n", L[1][0]);
-    printf("R: %f\n", R[0][2]);
-    printf("B: %f\n", group_B_final[1]);
-  }
-  //printf("complete\n");
 /*
-  printf("\n\n Visto pelos Users:");
-  for (int i = 0; i < nUser; i++)
-  {
+  if(world_rank == 0){
+    printf("\n\n Visto pelos Users:\n");
+    for (int i = 0; i < nUser; i++)
+    {
     A_aux1 = A_user[i];
     printf("\n\n User %d ligado a:\n", i);
     while (A_aux1 != NULL) {
@@ -337,7 +235,167 @@ int main(int argc, char *argv[]) {
     }
     printf("\n");
   }
+    }
 */
+
+  if(world_rank == 0 || world_rank == 2) {
+    int rank[] = {0, 2};
+    MPI_Group_incl(world_group, 2, rank, &R_group);
+    MPI_Comm_create_group(MPI_COMM_WORLD, R_group, 0, &R_comm);
+    k0 = 0;
+    k1 = 50;
+  }
+  else {
+    int rank[] = {1, 3};
+    MPI_Group_incl(world_group, 2, rank, &R_group);
+    MPI_Comm_create_group(MPI_COMM_WORLD, R_group, 0, &R_comm);
+    k0 = 50;
+    k1 = 100;
+  }
+
+  int inter = k1-k0;
+  int sizeof_derivs = (inter*nItem);
+  double *derivs = malloc(sizeof(double) * sizeof_derivs);
+  double *global_derivs = malloc(sizeof(double) * sizeof_derivs);
+
+  //printf("HERE %d\n", world_rank);
+  for (int n = 0; n < nIter; n++) {
+
+  update_recom(nUser, k0, k1, &L, &R, &A_user, local_B, group_B, B_comm, counter+1);
+
+  //printf("Calc B %d\n", world_rank);
+
+  /*
+  for(int i = 0; i < counter; i++){
+    printf("id: %d B:%f\n", i, group_B[i]);
+  }
+  */
+  int test = 0;
+
+
+  //L+1
+  for (int i = 0; i < nUser; i++) {
+      for (int k = k0; k < k1; k++) {
+
+        A_aux1 = A_user[i];
+        // sum of derivatives per item
+
+        while (A_aux1 != NULL) {
+          deriv +=
+              2 * (A_aux1->rate - group_B[A_aux1->recom]) * (-R[k][A_aux1->item]);
+          A_aux1 = A_aux1->nextItem;
+        }
+        // final calculation of t+1
+        A_aux1 = A_user[i];
+        if(A_aux1 != NULL)
+          newL[A_aux1->user][k] = L[A_aux1->user][k] - alpha * deriv;
+        //printf("L: %f\n", L[A_aux1->user][k]);
+        //printf("newL: %f\n", newL[A_aux1->user][k]);
+        deriv = 0;
+      }
+      //printf("\n");
+    }
+
+  //printf("Calc L+1 %d\n", world_rank);
+  //R+1
+  int c = 0;
+  for (int j = 0; j < nItem; j++) {
+      for (int k = k0; k < k1; k++) {
+
+        A_aux1 = A_item[j];
+
+        // sum of derivatives per user
+        while (A_aux1 != NULL) {
+          deriv += 2 * (A_aux1->rate - group_B[A_aux1->recom]) * (-L[A_aux1->user][k]);
+          A_aux1 = A_aux1->nextUser;
+        }
+        // final calculation of t+1
+        derivs[c] = alpha * deriv;
+        c++;
+        deriv = 0;
+      }
+    }
+
+  /*printf("sizeof_derivs: %d\n", c);
+  printf("cal size: %d\n", sizeof_derivs);
+  */
+  MPI_Allreduce(derivs, global_derivs, sizeof_derivs, MPI_DOUBLE, MPI_SUM, R_comm);
+
+  c = 0;
+  for (int j = 0; j < nItem; j++) {
+    for (int k = k0; k < k1; k++) {
+
+      newR[k][j] = R[k][j] - global_derivs[c];
+      //printf("world_rank: %d global_derivs: %f R: %f newR: %f\n", world_rank, global_derivs[c], R[k][j], newR[k][j]);
+      c++;
+      }
+  }
+
+  update_LR(&L, &R, &newL, &newR);
+  }
+
+
+  local_B_final = malloc(sizeof(double) * nUser * nItem);
+  group_B_final = malloc(sizeof(double) * nUser * nItem);
+
+  int c = 0;
+  for (int i = 0; i < nUser; i++) {
+    user_l = user_i + i;
+    for (int j = 0; j < nItem; j++) {
+      local_B_final[c] = 0;
+      group_B_final[c] = 0;
+      for (int k = k0; k < k1; k++){
+        local_B_final[c] += L[user_l][k] * R[k][j];
+      }
+      c++;
+    }
+  }
+
+  MPI_Reduce(local_B_final, group_B_final, nUser * nItem, MPI_DOUBLE, MPI_SUM, 0, B_comm);
+
+  c = 0;
+  for(int i = 0; i < nUser; i++) {
+    user_l = user_i + i;
+    for(int j = 0; j < nItem; j++) {
+      B[user_l][j] = group_B_final[c];
+      c++;
+    }
+  }
+
+  for (int k = 0; k < nUser; k++) {
+    sol_aux = 0;
+    A_aux1 = A_user[k];
+
+    // update entry of B to 0 if item already rated
+    while (A_aux1 != NULL) {
+      B[A_aux1->user][A_aux1->item] = 0;
+      A_aux1 = A_aux1->nextItem;
+    }
+
+    user_l = user_i + k;
+    // save item with highest rate
+    for(int j = 0; j < nItem; j++){
+      if (B[user_l][j] > sol_aux) {
+        solution[user_l] = j;
+        sol_aux = B[user_l][j];
+      }
+    }
+  }
+
+  int *global_solution;
+  global_solution = calloc(sizeof(int), nUser_original);
+
+  if(world_rank == 0 || world_rank == 2){
+    MPI_Reduce(solution, global_solution, nUser_original, MPI_INT, MPI_SUM, 0, R_comm);
+  }
+
+  if(world_rank == 0){
+    for(int i =0; i < nUser_original; i++)
+      printf("%d\n", global_solution[i]);
+  }
+
+  //printf("complete\n");
+
 
   /******************************Free A*****************************/
   //printf("world_rank: %d nUser: %d\n", world_rank, nUser);
@@ -433,24 +491,19 @@ entry** split_A(entry ***_A_user, entry ***_A_item, int new_first_user, int inte
         (*_A_item)[i] = NULL;
       }
     }
-/*
+
     if((*_A_item)[i] != NULL) {
           //printf("HERE NE\n");
           aux1 = (*_A_item)[i];
-          aux2 = (*_A_item)[i]->nextUser;
           while(aux1->nextUser != NULL) {
-          if (aux2 != NULL) {
-            if(aux2->user >= new_first_user+interval){
+            if(aux1->nextUser->user >= new_first_user+interval){
               aux1->nextUser = NULL;
             }
             else {
-              aux1 = aux2;
-              aux2 = aux2->nextUser;
+              aux1 = aux1->nextUser;
             }
           }
-          }
-        }
-        */
+      }
       //else está dentro do target
   }
 
@@ -463,7 +516,7 @@ entry** split_A(entry ***_A_user, entry ***_A_item, int new_first_user, int inte
 
   for (int i = 0; i < nU; i++)
   {
-    if(((*_A_user)[i]) != NULL){
+    //if(((*_A_user)[i]) != NULL){
 
       if((i<new_first_user) || (i>=new_first_user+interval)){ //fora do target
 
@@ -477,8 +530,9 @@ entry** split_A(entry ***_A_user, entry ***_A_item, int new_first_user, int inte
       }
       else{ //dentro do target
 
-        /* meter a NULL */
+        // meter a NULL
         newU[x]=(*_A_user)[i];
+        /*
         if (x==interval-1)
         {
           aux = newU[x];
@@ -488,11 +542,11 @@ entry** split_A(entry ***_A_user, entry ***_A_item, int new_first_user, int inte
             aux=aux->nextItem;
           }
         }
-        
+        */
         x++;
         (*_A_user)[i] = NULL;
       }     
-    }
+   // }
   }
 
 
