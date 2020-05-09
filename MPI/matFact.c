@@ -1,6 +1,6 @@
 /**************************Declarations**************************/
 #include <mpi.h>
-#include <math.h>
+
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
@@ -19,18 +19,6 @@ typedef struct entry {
   struct entry *nextItem;
   struct entry *nextUser;
 } entry;
-
- typedef struct group{
-    // total count of number of entries
-    int count;
-    // first and last user of that group
-    int firstUser;
-    int lastUser;
-    // list of machines for that group
-    int *machines;
-    // total machines
-   int numMach;
-  } group;
 
 void alloc_A(int nU, int nI, entry ***_A_user, entry ***_A_item,
              entry ***_A_user_aux, entry ***_A_item_aux);
@@ -63,8 +51,6 @@ int main(int argc, char *argv[]) {
   double alpha, sol_aux;
   double **L, **R, **B, **newL, **newR, *local_B, *group_B, *local_B_final, *group_B_final;
   char *outputFile;
-  double elapsed_time;
-  int my_group;
 
   entry **A_user, **A_user_aux, **A_item, **A_item_aux;
   entry **A_user_partition;
@@ -73,7 +59,6 @@ int main(int argc, char *argv[]) {
   MPI_Status status;
   MPI_Init (&argc, &argv);
   MPI_Barrier(MPI_COMM_WORLD);
-  elapsed_time = -MPI_Wtime();
   int world_rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
   int world_size;
@@ -84,14 +69,12 @@ int main(int argc, char *argv[]) {
 
   if (argc != 2) {
     printf("error: command of type ./matFact <filename.in>\n");
-    MPI_Finalize();
     exit(1);
   }
 
   fp = fopen(argv[1], "r");
   if (fp == NULL) {
     printf("error: cannot open file\n");
-    MPI_Finalize();
     exit(1);
   }
 
@@ -109,25 +92,11 @@ int main(int argc, char *argv[]) {
   // alloc vector that holds highest recom. per user
   solution = calloc(sizeof(int), nUser);
 
-  // vector with number of items per user
-  int *count = (int*)calloc(sizeof(int), nUser);
-  int auxUser = 0, userIdx = 0;
-
   // construct of a list of lists
   for (int i = 0; i < nEntry; i++) {
     A_aux1 = createNode();
-    // load of entryAof matrix A
+    // load of entry of matrix A
     fscanf(fp, "%d %d %lf", &(A_aux1->user), &(A_aux1->item), &(A_aux1->rate));
-
-    // store the sum of items per user
-    if(auxUser == A_aux1->user){
-      count[userIdx] ++;
-    }
-    else{
-      auxUser = A_aux1->user;
-      userIdx++;
-      count[userIdx] ++;
-    }
 
     if (A_user[A_aux1->user] == NULL) {
 
@@ -163,129 +132,6 @@ int main(int argc, char *argv[]) {
   alloc_LRB(nUser, nItem, nFeat, &L, &R, &newL, &newR, &B);
   random_fill_LR(nUser, nItem, nFeat, &L, &R, &newL, &newR);
 
-  /*******************Code for load balance********************/
-  // number of groups
-  int div = floor(sqrt(world_size));
-  // number of entries per division rounded down
-  int lower = nEntry / div;
-  // number of entries per division plus one
-  int upper = nEntry / div + 1;
-  // rest of division
-  int rest =  div % nEntry;
-  
-  // lower num of machines per group
-  int lowerMach = world_size / div;
-  // upper num of machines per group
-  int upperMach = lowerMach + 1;
-  // only use upper if rest of division not zero
-  int restMach = world_size % div;
-
-  int aux = 0, j = 0;
-
-  // vector with groups of users 
-  group *groups = (group*)calloc(sizeof(group), div);
-
-  for(int i = 0; i < nUser; i++){
-    // save first user of the group
-    if(groups[j].count == 0) groups[j].firstUser = i;
-    
-    // if we are in the last partition it gets the remaing users
-    if(j == div-1) groups[j].count += count[i];
-    else{
-      // aux that stores the possibel new user for that group
-      aux = groups[j].count + count[i];
-
-      // if the lower threshold is not with the sum of the new user add it and continue
-      if(aux <= lower) groups[j].count = aux;
-      // if threshold is atchived
-      else if((aux - upper) >= 0){
-        // check to see where the difference betwhen the two threshold
-        // is less
-        if(abs(groups[j].count - lower) < (aux - upper)){
-          // add the difference between the desired threshold
-          rest += aux - lower;
-          // save last user of the group
-          groups[j].lastUser = i-1;
-          // advance to next group
-          j++;
-          // the count that wasnt considered becaused it was closer to the lower boundary
-          // is put automatically in the next group 
-          groups[j].count = count[i];
-          // save first user of the group
-          groups[j].firstUser = i;
-        }
-        // check to see if there were already other groups to be above the upper threshold
-        // decrising already the rest
-        else if(rest > (aux - upper)){
-          // subtract the difference between the desired threshold
-          rest -= aux - upper;
-          // add the final user for that group
-          groups[j].count = aux;
-          // save last user of the group
-          groups[j].lastUser = i;
-          // advance to next group
-          j++;
-        }
-        // if so, it does not add the next user to the group
-        else{
-          // add the difference between the desired threshold
-          rest += aux - lower;
-          // add the final user for that group
-          groups[j].count = aux;
-          // save last user of the group
-          groups[j].lastUser = i;
-          // advance to next group
-          j++;
-        }
-      }
-    }
-    // if we are in the last iteration
-    if(i+1 == nUser) groups[j].lastUser = i;
-  }
-
-  int k = 0;
-  int divMach = upperMach;
-
-  // assigns a each group a set of computers 
-  for(int i = 0; i < div; i++){
-    if(restMach == 0) divMach = lowerMach;
-    else restMach -= 1;
-
-    groups[i].machines = malloc(sizeof(int) * divMach);
-
-    for(int j = 0; j < divMach; j++){
-      // if de problem in not divisible by the number of computers sets
-      // to the maximun possible meaning the group with zero rows are not 
-      // assinged to any machine
-      if(groups[i].count != 0){
-        groups[i].machines[j] = k;
-        groups[i].numMach = divMach;
-        if(k==world_rank) my_group = i;
-        k++;
-      }
-      else break;
-    }
-  }
-
-/*
-  if(world_rank == 2) {
-    printf("My group: %d\n", my_group);
-    printf("nEntries: %d\n", groups[my_group].count);
-    printf("first_user: %d\n", groups[my_group].firstUser);
-    printf("last_user: %d\n", groups[my_group].lastUser);
-    printf("numMach: %d\n", groups[my_group].numMach);
-    for(int i = 0; i < divMach; i++) printf("%d\n", groups[my_group].machines[i]);
-  }
-*/
-  //printf("\ngroup %d - count: %d - first user: %d - last user: %d\n", i, groups[i].count, groups[i].firstUser, groups[i].lastUser);
-  //printf("lower:%d - upper:%d - rest:%d\n", lowerMach, upperMach, restMach);
-  //if(!world_rank) printf("user:%d - lower:%d - upper:%d - rest:%d\n", nEntry, lower, upper, rest);
-  //fflush(stdin);
-  //printf("  m: %d\n", k);
-  //fflush(stdin);
-
-  /*******************Code for load balance********************/
-
 
 
   MPI_Comm B_comm, R_comm;
@@ -298,32 +144,6 @@ int main(int argc, char *argv[]) {
   int user_i = 0;
   int user_l = 0;
 
-  int *rank = groups[my_group].machines;
-  MPI_Group_incl(world_group, groups[my_group].numMach, rank, &B_group);
-  MPI_Comm_create_group(MPI_COMM_WORLD, B_group, 0, &B_comm);
-  nUser = groups[my_group].lastUser - groups[my_group].firstUser + 1;
-  user_i = groups[my_group].firstUser;
-  //if(world_rank == 2)
-  //printf("nUser:%d user_i: %d\n", nUser, user_i);
-  A_user = split_A(&A_user, &A_item, user_i, nUser, nUser_original, nItem);
-
-  for (int i = 0; i < nUser; i++) {
-    A_aux1 = A_user[i];
-
-    while(A_aux1 != NULL){
-      A_aux1->recom = counter;
-      counter++;
-
-      A_aux1 = A_aux1->nextItem;
-    }
-  }
-
-  local_B = malloc(sizeof(double) * counter+1);
-  group_B = malloc(sizeof(double) * counter+1);
-
-  //printf("counter: %d\n", counter);
-
-  /*
   //printf("world_rank: %d\n", world_rank);
   if(world_rank == 0 || world_rank == 1){
     int rank[] = {0, 1};
@@ -347,6 +167,15 @@ int main(int argc, char *argv[]) {
 
     local_B = malloc(sizeof(double) * counter+1);
     group_B = malloc(sizeof(double)* counter+1);
+
+/*
+    if(world_rank == 0) {
+      update_recom(nUser, 0, 1, &L, &R, &A_user, local_B, group_B, B_comm);
+    }
+    else{
+      update_recom(nUser, 1, 2, &L, &R, &A_user, local_B, group_B, B_comm);
+    }
+*/
   }
   else {
     int rank[] = {2, 3};
@@ -370,10 +199,19 @@ int main(int argc, char *argv[]) {
 
     local_B = malloc(sizeof(double) * counter+1);
     group_B = malloc(sizeof(double)* counter+1);
-  }
-*/
 /*
-  if(world_rank == 2){
+    if(world_rank == 2) {
+      update_recom(nUser, 0, 1, &L, &R, &A_user, local_B, group_B, B_comm);
+    }
+    else {
+      update_recom(nUser, 1, 2, &L, &R, &A_user, local_B, group_B, B_comm);
+    }
+*/
+
+  }
+
+/*
+  if(world_rank == 0){
     printf("\n\n Visto pelos Users:\n");
     for (int i = 0; i < nUser; i++)
     {
@@ -405,14 +243,14 @@ int main(int argc, char *argv[]) {
     MPI_Group_incl(world_group, 2, rank, &R_group);
     MPI_Comm_create_group(MPI_COMM_WORLD, R_group, 0, &R_comm);
     k0 = 0;
-    k1 = 1;
+    k1 = 50;
   }
   else {
     int rank[] = {1, 3};
     MPI_Group_incl(world_group, 2, rank, &R_group);
     MPI_Comm_create_group(MPI_COMM_WORLD, R_group, 0, &R_comm);
-    k0 = 1;
-    k1 = 2;
+    k0 = 50;
+    k1 = 100;
   }
 
   int inter = k1-k0;
@@ -581,9 +419,6 @@ int main(int argc, char *argv[]) {
   //free(group_B);
 
   //printf("Finalizing\n");
-  //elapsed_time += MPI_Wtime();
-  //printf("elapsed_time: %.1f\n", elapsed_time);
-
   MPI_Finalize();
 
   return 0;
