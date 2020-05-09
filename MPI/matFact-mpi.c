@@ -7,7 +7,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <math.h>
-#include <mpi.h>
+#include <mpi/mpi.h>
 
 #define RAND01 ((double)random() / (double)RAND_MAX)
 
@@ -24,8 +24,6 @@ typedef struct entryA
 entryA *createNode();
 void alloc_A(int nU, int nI, entryA***_A_user, entryA***_A_item,
              entryA***_A_user_aux, entryA***_A_item_aux);
-
-
 
 /****************************************************************/
 
@@ -128,33 +126,44 @@ int main(int argc, char *argv[])
   free(A_item_aux);
   free(A_user_aux);
 
-  /*for(int i = 0; i < nUser; i++){
-    printf("counts:%d\n", count[i]);
-  }*/
+  if(!id){
+    for(int i = 0; i < nUser; i++){
+      printf("user:%d counts:%d\n", i, count[i]);
+    }
+  }
 
   /*******************Code for load balance********************/
 
   typedef struct group{
     // total count of number of entries
     int count;
-    // indexes of users assigned to group
-    int idx[nUser];
+    // first and last user of that group
+    int firstUser;
+    int lastUser;
+    // list of machines for that group
+    int machines[np];
     // total machines
     int numIdx;
   } group;
 
   // number of groups
-  double divf = sqrt(np);
-  int div = floor(divf);
+  int div = floor(sqrt(np));
   // number of entries per division rounded down
   int lower = nEntry / div;
   // number of entries per division plus one
   int upper = nEntry / div + 1;
   // rest of division
   int rest =  div % nEntry;
+  
+  // lower num of machines per group
+  int lowerMach = np / div;
+  // upper num of machines per group
+  int upperMach = lowerMach + 1;
+  // only use upper if rest of division not zero
+  int restMach = np % div;
 
   int aux = 0;
-  //printf("lower:%d - upper:%d\n", lower, upper);
+  if(!id) printf("lower:%d - upper:%d - rest:%d\n", lowerMach, upperMach, restMach);
 
   // vector with groups of users 
   group *groups = (group*)calloc(sizeof(group), div);
@@ -162,17 +171,21 @@ int main(int argc, char *argv[])
   int j = 0;
 
   for(i = 0; i < nUser; i++){
+    // save first user of the group
+    if(groups[j].count == 0) groups[j].firstUser = i;
+
     // if we are in the last partition it gets the remaing users
     if(j == div-1){
       groups[j].count += count[i];
+      // if we are in the last iteration
+      if(i+1 == nUser) groups[j].lastUser = i;
     }
     else{
       // aux that stores the possibel new user for that group
       aux = groups[j].count + count[i];
 
-      if(aux <= lower){
-        groups[j].count = aux;
-      }
+      // if the lower threshold is not with the sum of the new user add it and continue
+      if(aux <= lower) groups[j].count = aux;
       // if threshold is atchived
       else if((aux - upper) >= 0){
         // check to see where the difference betwhen the two threshold
@@ -180,11 +193,15 @@ int main(int argc, char *argv[])
         if(abs(groups[j].count - lower) < (aux - upper)){
           // add the difference between the desired threshold
           rest += aux - lower;
+          // save last user of the group
+          groups[j].lastUser = i-1;
           // advance to next group
           j++;
           // the count that wasnt considered becaused it was closer to the lower boundary
-          // thank the upper is put automatically in the next group 
+          // is put automatically in the next group 
           groups[j].count = count[i];
+          // save first user of the group
+          groups[j].firstUser = i;
         }
         // check to see if there were already other groups to be above the upper threshold
         // decrising already the rest
@@ -193,15 +210,19 @@ int main(int argc, char *argv[])
           rest -= aux - upper;
           // add the final user for that group
           groups[j].count = aux;
+          // save last user of the group
+          groups[j].lastUser = i;
           // advance to next group
           j++;
         }
-        // if so does not add the next user to the group
+        // if so, it does not add the next user to the group
         else{
           // add the difference between the desired threshold
           rest += aux - lower;
           // add the final user for that group
           groups[j].count = aux;
+          // save last user of the group
+          groups[j].lastUser = i;
           // advance to next group
           j++;
         }
@@ -210,31 +231,34 @@ int main(int argc, char *argv[])
   }
 
   int k = 0;
+  int divMach = upperMach;
 
-  // assigns a each group a set of computers 
-  for(int i = 0; i < div; i++){
-    //printf("\ngroup %d - count: %d\n", i, groups[i].count);
-    //fflush(stdin);
+  if(!id){
+    // assigns a each group a set of computers 
+    for(int i = 0; i < div; i++){
+      if(restMach == 0) divMach = lowerMach;
+      else restMach -= 1;
+      //printf("\ngroup %d - count: %d - first user: %d - last user: %d\n", i, groups[i].count, groups[i].firstUser, groups[i].lastUser);
+      printf("lower:%d - upper:%d - rest:%d\n", lowerMach, upperMach, restMach);
+      fflush(stdin);
 
-    for(int j = 0; j < div; j++){
-      // if de problem in not divisible by the number of computers sets
-      // to the maximun possible meaning the group with zero rows are not 
-      // assinged to any machine
-      if(groups[i].count != 0){
-        groups[i].idx[j] = k;
-        //printf("  m: %d\n", k);
-        //fflush(stdin);
-        k++;
-      }
-      else{
-        break;
+      for(int j = 0; j < divMach; j++){
+        // if de problem in not divisible by the number of computers sets
+        // to the maximun possible meaning the group with zero rows are not 
+        // assinged to any machine
+        if(groups[i].count != 0){
+          groups[i].machines[j] = k;
+          printf("  m: %d\n", k);
+          fflush(stdin);
+          k++;
+        }
+        else{
+          break;
+        }
       }
     }
   }
 
-  /*for(int i = 0; i < div; i++){
-    printf("\ngroup %d - count: %d\n", i, groups[i].count);
-  }*/
 
   /*******************Code for load balance********************/
 
