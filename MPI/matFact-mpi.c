@@ -163,7 +163,7 @@ int main(int argc, char *argv[])
   int restMach = np % div;
 
   int aux = 0;
-  if(!id) printf("lower:%d - upper:%d - rest:%d\n", lowerMach, upperMach, restMach);
+  if(!id) printf("user:%d - lower:%d - upper:%d - rest:%d\n", nEntry, lower, upper, rest);
 
   // vector with groups of users 
   group *groups = (group*)calloc(sizeof(group), div);
@@ -173,17 +173,12 @@ int main(int argc, char *argv[])
   for(i = 0; i < nUser; i++){
     // save first user of the group
     if(groups[j].count == 0) groups[j].firstUser = i;
-
+    
     // if we are in the last partition it gets the remaing users
-    if(j == div-1){
-      groups[j].count += count[i];
-      // if we are in the last iteration
-      if(i+1 == nUser) groups[j].lastUser = i;
-    }
+    if(j == div-1) groups[j].count += count[i];
     else{
       // aux that stores the possibel new user for that group
       aux = groups[j].count + count[i];
-
       // if the lower threshold is not with the sum of the new user add it and continue
       if(aux <= lower) groups[j].count = aux;
       // if threshold is atchived
@@ -228,6 +223,8 @@ int main(int argc, char *argv[])
         }
       }
     }
+    // if we are in the last iteration
+    if(i+1 == nUser) groups[j].lastUser = i;
   }
 
   int k = 0;
@@ -238,8 +235,8 @@ int main(int argc, char *argv[])
     for(int i = 0; i < div; i++){
       if(restMach == 0) divMach = lowerMach;
       else restMach -= 1;
-      //printf("\ngroup %d - count: %d - first user: %d - last user: %d\n", i, groups[i].count, groups[i].firstUser, groups[i].lastUser);
-      printf("lower:%d - upper:%d - rest:%d\n", lowerMach, upperMach, restMach);
+      printf("\ngroup %d - count: %d - first user: %d - last user: %d\n", i, groups[i].count, groups[i].firstUser, groups[i].lastUser);
+      //printf("lower:%d - upper:%d - rest:%d\n", lowerMach, upperMach, restMach);
       fflush(stdin);
 
       for(int j = 0; j < divMach; j++){
