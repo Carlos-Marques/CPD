@@ -170,6 +170,8 @@ int main(int argc, char *argv[]) {
   /*******************Code for load balance********************/
   // number of groups
   int div = floor(sqrt(world_size));
+  // 
+  while(world_size % div != 0) div--;
   // number of entries per division rounded down
   int lower = nEntry / div;
   // number of entries per division plus one
@@ -240,22 +242,13 @@ int main(int argc, char *argv[]) {
     if(i+1 == nUser) groups[j].lastUser = i;
   }
 
-  // lower num of machines per group
-  int lowerMachine = world_size / div;
-  // upper num of machines per group
-  int upperMachine = lowerMachine + 1;
-  // only use upper if rest of division not zero
-  int restMachine = world_size % div;
-
+  int divMachine = world_size / div;
   int k = 0;
-  int divMachine = upperMachine;
   
   // assigns a each group a set of computers
   for(int i = 0; i < div; i++){
-    if(restMachine == 0) divMachine = lowerMachine;
-    else restMachine -= 1;
-
     groups[i].machines = malloc(sizeof(int) * divMachine);
+    groups[i].numMach = divMachine;
 
     for(int j = 0; j < divMachine; j++){
       // if de problem in not divisible by the number of computers sets
@@ -263,8 +256,7 @@ int main(int argc, char *argv[]) {
       // assinged to any machine
       if(groups[i].count != 0){
         groups[i].machines[j] = k;
-        groups[i].numMach = divMachine;
-        if(k==world_rank) my_group = i;
+        if(k == world_rank) my_group = i;
         k++;
       }
       else break;
@@ -285,8 +277,6 @@ int main(int argc, char *argv[]) {
 
   int *rank = groups[my_group].machines;
 
-  printf("numMach: %d\n", groups[my_group].numMach);
-  printf("my_group: %d\n", my_group);
   MPI_Group_incl(world_group, groups[my_group].numMach, rank, &B_group);
   MPI_Comm_create_group(MPI_COMM_WORLD, B_group, 0, &B_comm);
 
@@ -312,11 +302,11 @@ int main(int argc, char *argv[]) {
   group *R_groups = (group*)calloc(sizeof(group), groups[my_group].numMach);
 
   // lower num of machines per group
-  lowerMachine = nFeat/groups[my_group].numMach;
+  int lowerMachine = nFeat/groups[my_group].numMach;
   // upper num of machines per group
-  upperMachine = lowerMachine + 1;
+  int upperMachine = lowerMachine + 1;
   // only use upper if rest of division not zero
-  restMachine =  nFeat % groups[my_group].numMach;
+  int restMachine =  nFeat % groups[my_group].numMach;
 
   divMachine = upperMachine;
 
@@ -326,9 +316,9 @@ int main(int argc, char *argv[]) {
 
   for(int i = 0; i < groups[my_group].numMach; i++){
     
-    if(i>=restMachine) divMachine = lowerMachine;
+    if(i >= restMachine) divMachine = lowerMachine;
 
-    if(i!=0) k = R_groups[i-1].lastUser;
+    if(i != 0) k = R_groups[i-1].lastUser;
 
     R_groups[i].machines = malloc(sizeof(int) * div);
     R_groups[i].firstUser = k;
