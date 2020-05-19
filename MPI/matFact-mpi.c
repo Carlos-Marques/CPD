@@ -25,8 +25,8 @@ typedef struct entry {
     // total count of number of entries
     int count;
     // first and last user of that group
-    int firstUser;
-    int lastUser;
+    int first;
+    int last;
     // list of machines for that group
     int *machines;
     // total machines
@@ -58,6 +58,10 @@ void free_LR(int nU, int nF, double ***L, double ***R, double ***newL,
 
 void free_B(int nU, double ***B);
 
+void load_balance(group **groupL, group **groupR, int world_size, int nUser, int nEntry, int nItem, int *count, int *my_group_L_L, int *my_group_L_R, int world_rank);
+
+void get_div(int nUser, int nItem, int world_size, int world_rank, int *divU, int *divI);
+
 /****************************************************************/
 
 int main(int argc, char *argv[]) {
@@ -68,7 +72,7 @@ int main(int argc, char *argv[]) {
   double alpha, sol_aux;
   double **L, **R, **B, **newL, **newR, *local_B, *group_B, *local_B_final, *group_B_final;
   double elapsed_time;
-  int my_group;
+  int my_group_L, my_group_R;
 
   entry **A_user, **A_user_aux, **A_item, **A_item_aux;
   entry *A_aux1, *A_aux2;
@@ -110,7 +114,7 @@ int main(int argc, char *argv[]) {
   fscanf(fp, "%lf", &alpha);
   fscanf(fp, "%d", &nFeat);
   fscanf(fp, "%d %d %d", &nUser, &nItem, &nEntry);
-  nUser_original=nUser;
+  nUser_original = nUser;
 
   // alloc struct that holds A and it's approximation, B
   alloc_A(nUser, nItem, &A_user, &A_item, &A_user_aux, &A_item_aux);
@@ -168,100 +172,25 @@ int main(int argc, char *argv[]) {
   /****************************End Setup****************************/
 
   /*******************Code for load balance********************/
-  // number of groups
-  int div = floor(sqrt(world_size));
-  // 
-  while(world_size % div != 0) div--;
-  // number of entries per division rounded down
-  int lower = nEntry / div;
-  // number of entries per division plus one
-  int upper = nEntry / div + 1;
-  // rest of division
-  int rest =  div % nEntry;
-  
-  int aux = 0, j = 0;
+  int divU, divI;
+
+  get_div(nUser, nItem, world_size, world_rank, &divU, &divI);
 
   // vector with groups of users
-  group *groups = (group*)calloc(sizeof(group), div);
+  group *groupL = (group*)calloc(sizeof(group), divU);
+  group *groupR = (group*)calloc(sizeof(group), divI);
 
-  for(int i = 0; i < nUser; i++){
-    // save first user of the group
-    if(groups[j].count == 0) groups[j].firstUser = i;
+  load_balance(&groupL, &groupR, world_size, nUser, nEntry, nItem, count, &my_group_L, &my_group_R, world_rank);
 
-    // if we are in the last partition it gets the remaing users
-    if(j == div-1) groups[j].count += count[i];
-    else{
-      // aux that stores the possibel new user for that group
-      aux = groups[j].count + count[i];
+  /*for(int i = 0; i < div; i++){
+    printf("group: %d mygroup: %d\n", i, my_group_L);
+    printf("machine: %d\n", groups[i].numMach);
+    
+  }*/
 
-      // if the lower threshold is not with the sum of the new user add it and continue
-      if(aux <= lower) groups[j].count = aux;
-      // if threshold is atchived
-      else if((aux - upper) >= 0){
-        // check to see where the difference betwhen the two threshold
-        // is less
-        if(abs(groups[j].count - lower) < (aux - upper)){
-          // add the difference between the desired threshold
-          rest += aux - lower;
-          // save last user of the group
-          groups[j].lastUser = i-1;
-          // advance to next group
-          j++;
-          // the count that wasnt considered becaused it was closer to the lower boundary
-          // is put automatically in the next group
-          groups[j].count = count[i];
-          // save first user of the group
-          groups[j].firstUser = i;
-        }
-        // check to see if there were already other groups to be above the upper threshold
-        // decrising already the rest
-        else if(rest > (aux - upper)){
-          // subtract the difference between the desired threshold
-          rest -= aux - upper;
-          // add the final user for that group
-          groups[j].count = aux;
-          // save last user of the group
-          groups[j].lastUser = i;
-          // advance to next group
-          j++;
-        }
-        // if so, it does not add the next user to the group
-        else{
-          // add the difference between the desired threshold
-          rest += aux - lower;
-          // add the final user for that group
-          groups[j].count = aux;
-          // save last user of the group
-          groups[j].lastUser = i;
-          // advance to next group
-          j++;
-        }
-      }
-    }
-    // if we are in the last iteration
-    if(i+1 == nUser) groups[j].lastUser = i;
-  }
+  MPI_Finalize();
 
-  int divMachine = world_size / div;
-  int k = 0;
-  
-  // assigns a each group a set of computers
-  for(int i = 0; i < div; i++){
-    groups[i].machines = malloc(sizeof(int) * divMachine);
-    groups[i].numMach = divMachine;
-
-    for(int j = 0; j < divMachine; j++){
-      // if de problem in not divisible by the number of computers sets
-      // to the maximun possible meaning the group with zero rows are not 
-      // assinged to any machine
-      if(groups[i].count != 0){
-        groups[i].machines[j] = k;
-        if(k == world_rank) my_group = i;
-        k++;
-      }
-      else break;
-    }
-  }
+  return 0;
 
   /*******************Code for load balance********************/
 
@@ -275,13 +204,13 @@ int main(int argc, char *argv[]) {
   int user_i = 0;
   int user_l = 0;
 
-  int *rank = groups[my_group].machines;
+  int *rank = groupL[my_group_L].machines;
 
-  MPI_Group_incl(world_group, groups[my_group].numMach, rank, &B_group);
+  MPI_Group_incl(world_group, groupL[my_group_L].numMach, rank, &B_group);
   MPI_Comm_create_group(MPI_COMM_WORLD, B_group, 0, &B_comm);
 
-  nUser = groups[my_group].lastUser - groups[my_group].firstUser + 1;
-  user_i = groups[my_group].firstUser;
+  nUser = groupL[my_group_L].last - groupL[my_group_L].first + 1;
+  user_i = groupL[my_group_L].first;
 
   A_user = split_A(&A_user, &A_item, user_i, nUser, nUser_original, nItem);
 
@@ -299,44 +228,44 @@ int main(int argc, char *argv[]) {
   local_B = malloc(sizeof(double) * counter+1);
   group_B = malloc(sizeof(double) * counter+1);
 
-  group *R_groups = (group*)calloc(sizeof(group), groups[my_group].numMach);
+  group *R_groups = (group*)calloc(sizeof(group), groupL[my_group_L].numMach);
 
   // lower num of machines per group
-  int lowerMachine = nFeat/groups[my_group].numMach;
+  int lowerMachine = nFeat/groupL[my_group_L].numMach;
   // upper num of machines per group
   int upperMachine = lowerMachine + 1;
   // only use upper if rest of division not zero
-  int restMachine =  nFeat % groups[my_group].numMach;
+  int restMachine =  nFeat % groupL[my_group_L].numMach;
 
-  divMachine = upperMachine;
+  int divMachine = upperMachine;
 
-  k = 0;
+  int k = 0;
 
   int my_R_group;
-
-  for(int i = 0; i < groups[my_group].numMach; i++){
+ 
+  for(int i = 0; i < groupL[my_group_L].numMach; i++){
     
     if(i >= restMachine) divMachine = lowerMachine;
 
-    if(i != 0) k = R_groups[i-1].lastUser;
+    if(i != 0) k = R_groups[i-1].last;
 
-    R_groups[i].machines = malloc(sizeof(int) * div);
-    R_groups[i].firstUser = k;
-    R_groups[i].lastUser = R_groups[i].firstUser + divMachine;
+    R_groups[i].machines = malloc(sizeof(int) * divU);
+    R_groups[i].first = k;
+    R_groups[i].last = R_groups[i].first + divMachine;
 
-    #pragma omp parallel default(none) shared(groups, R_groups, my_R_group, i, world_rank, div)
+    #pragma omp parallel default(none) shared(groupL, R_groups, my_R_group, i, world_rank, divU)
     {
       #pragma omp for
-      for(int j = 0; j < div; j++){
-        R_groups[i].machines[j] = groups[j].machines[i];
+      for(int j = 0; j < divU; j++){
+        R_groups[i].machines[j] = groupL[j].machines[i];
         if(world_rank == R_groups[i].machines[j]) my_R_group = i;
       }
     }
   }
 
-  k0 = R_groups[my_R_group].firstUser;
-  k1 = R_groups[my_R_group].lastUser;
-  MPI_Group_incl(world_group, div, R_groups[my_R_group].machines, &R_group);
+  k0 = R_groups[my_R_group].first;
+  k1 = R_groups[my_R_group].last;
+  MPI_Group_incl(world_group, divU, R_groups[my_R_group].machines, &R_group);
   MPI_Comm_create_group(MPI_COMM_WORLD, R_group, 0, &R_comm);
 
   int inter = k1-k0;
@@ -404,7 +333,7 @@ int main(int argc, char *argv[]) {
       for (int k = 0; k < nFeat; k++) {
         newR[k][j] = R[k][j] - global_derivs[c];
         c++;
-        }
+      }
     }
 
     update_LR(&L, &R, &newL, &newR);
@@ -476,6 +405,7 @@ int main(int argc, char *argv[]) {
     
     A_aux1 = A_user[i];
 
+
     while (A_aux1 != NULL) {
       A_aux2 = A_aux1->nextItem;
       free(A_aux1);
@@ -484,7 +414,6 @@ int main(int argc, char *argv[]) {
   }
   free(A_user);
   free(A_item);
-
   free(count);
   free(solution);
   
@@ -498,17 +427,17 @@ int main(int argc, char *argv[]) {
   free(group_B_final);
   
 
-  for (int i = 0; i < groups[my_group].numMach; i++)
+  for (int i = 0; i < groupL[my_group_L].numMach; i++)
   {
     free(R_groups[i].machines);
   }
   free(R_groups);
 
-  for (int i = 0; i < div; i++)
+  for (int i = 0; i < divU; i++)
   {
-    free(groups[i].machines);
+    free(groupL[i].machines);
   }
-  free(groups);
+  free(groupL);
 
   free(derivs);
   free(global_derivs);
@@ -569,9 +498,7 @@ entry** split_A(entry ***_A_user, entry ***_A_item, int new_first_user, int inte
               (*_A_item)[i] = NULL;
             }
           }
-
-
-          }
+        }
         else if ((((*_A_item)[i])->user)>=new_first_user+interval){
 
           /* meter a NULL */
@@ -776,3 +703,196 @@ void update_LR(double ***L, double ***R, double ***newL, double ***newR) {//OMP
   *R = *newR;
   *newR = aux;
 }
+
+void load_balance(group **groupL, group **groupR,int world_size, int nUser, int nEntry, int nItem, int *count, int *my_group_L, int *my_group_R, int world_rank){
+  
+  int divU, divI;
+
+  get_div(nUser, nItem, world_size, world_rank, &divU, &divI);
+
+  // number of entries per division rounded down
+  int lower = nEntry / divU;
+  // number of entries per division plus one
+  int upper = nEntry / divU + 1;
+  // rest of division
+  int rest =  divU % nEntry;
+  
+  int aux = 0, j = 0;
+
+  for(int i = 0; i < nUser; i++){
+    
+    // save first user of the group
+    if((*groupL)[j].count == 0) (*groupL)[j].first = i;
+    // if we are in the last partition it gets the remaing users
+    if(j == divU-1) (*groupL)[j].count += count[i];
+    else{
+      // aux that stores the possibel new user for that group
+      aux = (*groupL)[j].count + count[i];
+      // if the lower threshold is not with the sum of the new user add it and continue
+      if(aux <= lower) (*groupL)[j].count = aux;
+      // if threshold is atchived
+      else if((aux - upper) >= 0){
+        // check to see where the difference betwhen the two threshold
+        // is less
+        if(abs((*groupL)[j].count - lower) < (aux - upper)){
+          // add the difference between the desired threshold
+          rest += aux - lower;
+          // save last user of the group
+          (*groupL)[j].last = i-1;
+          // advance to next group
+          j++;
+          // the count that wasnt considered becaused it was closer to the lower boundary
+          // is put automatically in the next group
+          (*groupL)[j].count = count[i];
+          // save first user of the group
+          (*groupL)[j].first = i;
+        }
+        // check to see if there were already other groups to be above the upper threshold
+        // decrising already the rest
+        else if(rest > (aux - upper)){
+          // subtract the difference between the desired threshold
+          rest -= aux - upper;
+          // add the final user for that group
+          (*groupL)[j].count = aux;
+          // save last user of the group
+          (*groupL)[j].last = i;
+          // advance to next group
+          j++;
+
+        }
+        // if so, it does not add the next user to the group
+        else{
+          // add the difference between the desired threshold
+          rest += aux - lower;
+          // add the final user for that group
+          (*groupL)[j].count = aux;
+          // save last user of the group
+          (*groupL)[j].last = i;
+          // advance to next group
+          j++;
+        }
+      }
+    }
+    // if we are in the last iteration
+    if(i+1 == nUser) (*groupL)[j].last = i;
+  }
+
+  for(int i = 0; i < divU; i++){
+    (*groupL)[i].machines = malloc(sizeof(int) * divI);
+    (*groupL)[i].numMach = divI;    
+    for(int j = 0; j < divI; j++){
+      // if de problem in not divisible by the number of computers sets
+      // to the maximun possible meaning the group with zero rows are not 
+      // assinged to any machine
+
+      if((*groupL)[i].count != 0){
+        (*groupL)[i].machines[j] = i*divI+j;
+        if(i*divI+j == world_rank) *my_group_L = i;
+      }
+      else break;
+    }
+  }  
+  
+
+  // number of entries per division rounded down
+  lower = nItem / divI;
+  // number of entries per division plus one
+  upper = lower + 1;
+  // rest of division
+  rest =  nItem % divI;
+
+  int div = upper;
+
+  j = 0;
+  for(int i = 0; i < nItem; i++){
+
+    if((*groupR)[j].count == 0) (*groupR)[j].first = i;  
+    if( j >= rest) div = lower;
+
+    if((*groupR)[j].count != div){
+      (*groupR)[j].count ++;
+    }
+    else{
+      (*groupR)[j].last = i;
+      j++;
+    }
+    if(i+1 == nItem) (*groupR)[j].last = i;
+  }
+
+  for(int i = 0; i < divI; i++){
+    if(!world_rank)printf("group: %d count: %d firstItem: %d lastItem: %d\n", i, (*groupR)[i].count, (*groupR)[i].first, (*groupR)[i].last);
+    (*groupR)[i].machines = malloc(sizeof(int) * divU);
+    (*groupR)[i].numMach = divU;   
+    
+    for(int j = 0; j < divU; j++){
+      // if de problem in not divisible by the number of computers sets
+      // to the maximun possible meaning the group with zero rows are not 
+      // assinged to any machine
+      if((*groupR)[i].count != 0){
+        (*groupR)[i].machines[j] = (*groupL)[j].machines[i];
+        if(world_rank == (*groupR)[i].machines[j]) *my_group_R = i;
+      }
+      else break;
+
+      if(!world_rank)printf("machine:%d\n", (*groupR)[i].machines[j]);
+    }
+  } 
+}
+
+void get_div(int nUser, int nItem, int world_size, int world_rank, int *divU, int *divI){
+  float x = sqrt( (float)nUser/(float)nItem * (float)world_size  );
+  float y = sqrt( (float)nItem/(float)nUser * (float)world_size  );
+
+  float cand1 = world_size, cand2 = 1;
+  float *candU, *candI;
+  float error;
+
+  if(nUser > nItem){
+    candU = &cand1;
+    candI = &cand2;
+  }
+  else{
+    candI = &cand1;
+    candU = &cand2;
+  }
+
+  error = abs(*candU - x) + abs(*candI - y);
+  *divU = *candU;
+  *divI = *candI;
+
+  while(cand1 >= cand2){
+    cand1 /= 2;
+    cand2 *= 2;
+
+    if( abs(*candU - x) + abs(*candI - y) < error ){
+      error = abs(*candU - x) + abs(*candI - y);
+      *divU = (int)*candU;
+      *divI = (int)*candI;
+    }
+  }
+
+  if(!world_rank)printf("user_total: %d item_total: %d proc: %d\n", nUser, nItem, world_size);
+  fflush(stdin);
+  if(!world_rank)printf("user_perf: %.2f item_perf: %.2f proc: %.2f\n", x, y, x*y);
+  fflush(stdin);
+  if(!world_rank)printf("user: %d item: %d proc: %d\n", *divU, *divI, (*divU)*(*divI));
+  fflush(stdin);
+}
+
+
+/*int k = 0;
+  group mygroup;
+  int lowerMach = nItem/divI;
+  int upperMach = lowerMach + 1;
+  int restMach = nItem % divI;
+  int divMach = upperMach;
+
+  if(world_rank < divI){
+    if( world_rank >= restMach) divMach = lowerMach;    
+    if( world_rank ) mygroup.firstItem = world_rank*divMach + restMach;
+    else mygroup.firstItem = world_rank*divMach;
+
+    mygroup.lastItem = world_rank*divMach + divMach - 1;
+
+    printf("id: %d firstItem: %d lastItem: %d\n", world_rank,mygroup.firstItem, mygroup.lastItem);
+  }*/
